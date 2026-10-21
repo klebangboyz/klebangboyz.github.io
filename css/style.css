@@ -1682,3 +1682,344 @@ button {
   from { opacity: 0; transform: translateY(12px) scale(0.95); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* ==========================================================================
+   MOBILE & RESPONSIVE PERFECTION (< 768px & < 380px)
+   ========================================================================== */
+@media (max-width: 768px) {
+  :root {
+    --nav-height: 56px;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  .container {
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+  }
+
+  .main-feed-section {
+    padding: 1.25rem 0 3rem;
+  }
+
+  /* 1. Header & Navigation Fixes */
+  .site-header {
+    height: 56px;
+  }
+
+  .nav-container {
+    height: 56px;
+    padding: 0 0.75rem;
+    gap: 0.4rem;
+  }
+
+  .nav-logo {
+    gap: 0.45rem;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
+  .nav-logo-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+
+  .logo-text {
+    min-width: 0;
+  }
+
+  .logo-title {
+    font-size: 0.95rem;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .logo-sub {
+    font-size: 0.58rem;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+
+  .nav-actions-wrap {
+    gap: 0.35rem;
+    flex-shrink: 0;
+  }
+
+  /* Language Selector - Never wrap or break lines */
+  .lang-selector {
+    padding: 0.2rem 0.4rem;
+    gap: 0.15rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .lang-btn {
+    padding: 0.12rem 0.32rem;
+    font-size: 0.7rem;
+    white-space: nowrap;
+  }
+
+  .lang-sep {
+    font-size: 0.65rem;
+    margin: 0;
+  }
+
+  /* Refresh Button - Compact round icon button on mobile */
+  .btn-refresh {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 50%;
+    justify-content: center;
+    background-color: rgba(32, 32, 112, 0.08);
+    border-color: rgba(32, 32, 112, 0.2);
+    flex-shrink: 0;
+  }
+
+  .btn-refresh span {
+    display: none;
+  }
+
+  .btn-refresh svg {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+  }
+
+  .header-spacer {
+    height: 56px;
+  }
+
+  /* 2. Feed Toolbar on Mobile */
+  .feed-toolbar {
+    margin-bottom: 1rem;
+    gap: 0.65rem;
+  }
+
+  .feed-toolbar-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .feed-toolbar-title {
+    font-size: 1.2rem;
+  }
+
+  .feed-search-wrap {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .feed-search-field {
+    padding: 0.45rem 1rem;
+    font-size: 0.82rem;
+  }
+
+  /* Channel Filters row */
+  .channel-filters-row {
+    padding: 2px 0 6px;
+    gap: 0.32rem;
+    scroll-padding: 0.5rem;
+  }
+
+  .channel-filter-btn {
+    padding: 0.32rem 0.6rem;
+    font-size: 0.72rem;
+  }
+
+  .channel-filter-btn img {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* 3. Post Card & Header */
+  .feed-grid {
+    gap: 1.25rem;
+  }
+
+  .fb-post-card {
+    border-radius: 16px;
+  }
+
+  .fb-post-header {
+    padding: 0.85rem 0.85rem 0.55rem;
+    gap: 0.45rem;
+    align-items: flex-start;
+  }
+
+  .fb-author-wrap {
+    gap: 0.55rem;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .fb-author-avatar {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+  }
+
+  .fb-author-name {
+    font-size: 0.92rem;
+    line-height: 1.25;
+    word-break: break-word;
+  }
+
+  .collab-names {
+    font-size: 0.85rem;
+  }
+
+  .collab-avatars-cluster .primary-avatar,
+  .collab-avatars-cluster .collab-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .fb-post-date {
+    font-size: 0.7rem;
+  }
+
+  .reshare-action-badge {
+    font-size: 0.7rem;
+    margin-left: 0.2rem;
+  }
+
+  /* View on FB button on mobile */
+  .fb-view-btn-top {
+    padding: 0.28rem 0.55rem;
+    font-size: 0.7rem;
+    gap: 0.25rem;
+    margin-left: 0.25rem;
+  }
+
+  /* 4. Post Content */
+  .fb-post-content {
+    padding: 0 0.85rem 0.85rem;
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+  /* 5. Photos & Video Scaling on Mobile */
+  .fb-post-media,
+  .fb-video-media {
+    width: calc(100% - 1rem);
+    margin: 0 auto 0.75rem;
+    border-radius: 12px;
+  }
+
+  /* 6. Reshared Inset Embed */
+  .fb-reshared-embed {
+    margin: 0 0.75rem 0.75rem;
+    padding: 0.75rem;
+    border-radius: 12px;
+  }
+
+  .reshared-embed-header {
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .reshared-author-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .reshared-author-name {
+    font-size: 0.84rem;
+  }
+
+  .reshared-post-date {
+    font-size: 0.68rem;
+  }
+
+  .reshared-post-content {
+    font-size: 0.86rem;
+    line-height: 1.55;
+    margin-bottom: 0.6rem;
+  }
+
+  .reshared-media-wrap {
+    border-radius: 10px;
+  }
+
+  /* 7. Post Stats Footer */
+  .fb-post-stats {
+    padding: 0.65rem 0.85rem;
+    font-size: 0.75rem;
+  }
+
+  /* 8. Site Footer */
+  .footer-inner {
+    padding: 1.75rem 0 1.25rem;
+    gap: 0.75rem;
+  }
+
+  .footer-logo-row {
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .footer-title-block {
+    text-align: center;
+  }
+
+  .footer-site-title {
+    font-size: 1.05rem;
+  }
+
+  .footer-source-note {
+    font-size: 0.78rem;
+    padding: 0 0.5rem;
+  }
+
+  .footer-meta-row {
+    font-size: 0.72rem;
+    gap: 0.35rem;
+  }
+}
+
+/* Extra small mobile screens (< 380px) */
+@media (max-width: 380px) {
+  .nav-container {
+    padding: 0 0.45rem;
+    gap: 0.25rem;
+  }
+
+  .logo-title {
+    font-size: 0.86rem;
+  }
+
+  .logo-sub {
+    display: none;
+  }
+
+  .lang-selector {
+    padding: 0.15rem 0.25rem;
+    font-size: 0.65rem;
+  }
+
+  .lang-btn {
+    padding: 0.1rem 0.22rem;
+    font-size: 0.64rem;
+  }
+
+  .btn-refresh {
+    width: 30px;
+    height: 30px;
+  }
+
+  .btn-refresh svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  .fb-view-btn-top span {
+    display: none;
+  }
+}
