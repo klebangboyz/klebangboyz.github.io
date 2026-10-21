@@ -176,6 +176,7 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
     if (!attached) return null;
 
     const target = attached.story || attached;
+    const actor = (target.actors && target.actors[0]) || (target.comet_sections?.context_layout?.story?.comet_sections?.actor_photo?.story?.actors?.[0]);
     let authorName = actor?.name || '';
     let authorAvatar = actor?.profile_picture?.uri || (actor?.id ? `https://graph.facebook.com/${actor.id}/picture?type=large` : '');
     const message = target.message?.text || target.comet_sections?.content?.story?.message?.text || '';
