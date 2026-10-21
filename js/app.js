@@ -535,6 +535,58 @@ function parsePostHtml(html) {
  * Resolves canonical author and collab partners for cross-posted / collaborative posts
  */
 function enrichPostWithCollabData(post, profiles) {
+  // Registry of known community leaders & candidates for Melaka / Bersama
+  const knownLeaders = [
+    {
+      id: 'drbryankek',
+      aliases: ['dr bryan kek', 'drbryankek', 'bryan kek', 'dr bryan'],
+      name: 'Dr Bryan Kek',
+      url: 'https://www.facebook.com/drbryankek',
+      avatar: 'https://graph.facebook.com/drbryankek/picture?type=large',
+      role: 'Wakil BERSAMA N19 Kesidang'
+    },
+    {
+      id: 'Bersamagohan',
+      aliases: ['bersamagohan', 'goh han koon', 'han koon'],
+      name: 'Bersamagohan',
+      url: 'https://www.facebook.com/Bersamagohan',
+      avatar: 'https://graph.facebook.com/Bersamagohan/picture?type=large',
+      role: 'Wakil BERSAMA N15 Pengkalan Batu'
+    },
+    {
+      id: 'bersama.jieyu',
+      aliases: ['young jie yu', 'jie yu', 'bersama.jieyu'],
+      name: 'Young Jie Yu',
+      url: 'https://www.facebook.com/bersama.jieyu',
+      avatar: 'https://graph.facebook.com/bersama.jieyu/picture?type=large',
+      role: 'Wakil BERSAMA N14 Klebang'
+    },
+    {
+      id: 'JomBersamaEthan',
+      aliases: ['jom bersama ethan', 'ethan lim zhi hao', 'ethan lim', 'jombersamaethan'],
+      name: 'Ethan Lim Zhi Hao',
+      url: 'https://www.facebook.com/JomBersamaEthan',
+      avatar: 'https://graph.facebook.com/JomBersamaEthan/picture?type=large',
+      role: 'Wakil BERSAMA N20 Kota Laksamana'
+    },
+    {
+      id: 'gueteck',
+      aliases: ['datuk gue teck', 'gue teck', 'gueteck'],
+      name: 'Datuk Gue Teck',
+      url: 'https://www.facebook.com/gueteck',
+      avatar: 'https://graph.facebook.com/gueteck/picture?type=large',
+      role: 'Wakil BERSAMA Melaka'
+    },
+    {
+      id: 'hazwanmustafa',
+      aliases: ['muhammad hazwan mustafa', 'hazwan mustafa', 'hazwan'],
+      name: 'Muhammad Hazwan Mustafa',
+      url: 'https://www.facebook.com/hazwanmustafa',
+      avatar: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='48' fill='#202070'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' fill='#FFD700' font-family='sans-serif' font-weight='800' font-size='34'>HM</text></svg>"),
+      role: 'Wakil BERSAMA N23 Telok Mas'
+    }
+  ];
+
   // 0. If this is already a multi-sharer consolidated post, keep and enrich all sharers
   if (post.isMultiSharer && Array.isArray(post.sharers)) {
     const sourceSet = new Set(Array.isArray(post.sources) ? post.sources : []);
@@ -570,42 +622,102 @@ function enrichPostWithCollabData(post, profiles) {
     };
   }
 
-  // 2. Identify collaborating / cross-posted profile
-  let collab = null;
-  if (post.sourceId && post.sourceId !== primary.id) {
-    collab = profiles.find(pr => pr.id === post.sourceId);
+  // 2. Build collaborators list (supporting N-pax collaborations)
+  const collaborators = [];
+  const addCollab = (item) => {
+    if (!item || !item.name) return;
+    if (item.id && primary.id && item.id.toLowerCase() === primary.id.toLowerCase()) return;
+    if (item.name.toLowerCase() === (primary.name || '').toLowerCase()) return;
+    if (collaborators.some(c => (c.id && item.id && c.id.toLowerCase() === item.id.toLowerCase()) || c.name.toLowerCase() === item.name.toLowerCase())) {
+      return;
+    }
+    collaborators.push({
+      id: item.id || '',
+      name: item.name,
+      avatar: item.avatar || (item.id ? `https://graph.facebook.com/${encodeURIComponent(item.id)}/picture?type=large` : ''),
+      url: item.url || (item.id ? `https://www.facebook.com/${item.id}` : ''),
+      role: item.role || ''
+    });
+  };
+
+  if (Array.isArray(post.collaborators)) {
+    post.collaborators.forEach(addCollab);
+  } else if (post.collabAuthor) {
+    const names = post.collabAuthor.split(/\s*×\s*|\s*,\s*/);
+    names.forEach(n => {
+      const match = knownLeaders.find(l => l.name.toLowerCase() === n.toLowerCase() || l.aliases.includes(n.toLowerCase())) ||
+                    profiles.find(p => p.name.toLowerCase() === n.toLowerCase());
+      if (match) {
+        addCollab(match);
+      } else {
+        addCollab({ name: n, avatar: post.collabAvatar, url: post.collabUrl });
+      }
+    });
   }
 
-  // Also inspect post content for cross-mentions of other monitored profiles
-  const contentLower = (post.content || '').toLowerCase();
-  for (const pr of profiles) {
-    if (pr.id === primary.id || (collab && pr.id === collab.id)) continue;
-    const nameLower = (pr.name || '').toLowerCase();
-    if (
-      (nameLower && contentLower.includes(nameLower)) ||
-      contentLower.includes(pr.id.toLowerCase()) ||
-      contentLower.includes('#' + pr.id.toLowerCase())
-    ) {
-      if (!collab) {
-        collab = pr;
+  // Check post.sources
+  if (Array.isArray(post.sources)) {
+    post.sources.forEach(sid => {
+      if (sid && sid !== primary.id) {
+        const leader = knownLeaders.find(l => l.id.toLowerCase() === sid.toLowerCase()) ||
+                      profiles.find(p => p.id && p.id.toLowerCase() === sid.toLowerCase());
+        if (leader) addCollab(leader);
       }
+    });
+  }
+
+  if (post.sourceId && post.sourceId !== primary.id) {
+    const leader = knownLeaders.find(l => l.id.toLowerCase() === post.sourceId.toLowerCase()) ||
+                  profiles.find(p => p.id && p.id.toLowerCase() === post.sourceId.toLowerCase());
+    if (leader) addCollab(leader);
+  }
+
+  // Special joint statement detection for 2 Oct post
+  const isTunTejaJointStatement = (post.id && post.id.includes('122145642801151390')) ||
+    (post.content && (post.content.includes('RM2.075') || post.content.includes('Jejantas Tun Teja'))) ||
+    (post.images && post.images.some(img => img.includes('122145695925151390') || img.includes('122145642639151390')));
+
+  if (isTunTejaJointStatement) {
+    const jointSignatories = [
+      knownLeaders.find(l => l.id === 'Bersamagohan'),
+      knownLeaders.find(l => l.id === 'bersama.jieyu'),
+      knownLeaders.find(l => l.id === 'JomBersamaEthan'),
+      knownLeaders.find(l => l.id === 'gueteck'),
+      knownLeaders.find(l => l.id === 'hazwanmustafa')
+    ];
+    jointSignatories.forEach(addCollab);
+  }
+
+  // Cross-mentions detection
+  const contentLower = (post.content || '').toLowerCase();
+  for (const leader of knownLeaders) {
+    if (leader.id.toLowerCase() === primary.id.toLowerCase()) continue;
+    const isMentioned = leader.aliases.some(alias => contentLower.includes(alias.toLowerCase()) || contentLower.includes('#' + alias.toLowerCase().replace(/\s+/g, '')));
+    if (isMentioned) {
+      addCollab(leader);
     }
   }
 
   const sourceSet = new Set(Array.isArray(post.sources) ? post.sources : []);
   if (primary.id) sourceSet.add(primary.id);
-  if (collab && collab.id) sourceSet.add(collab.id);
   if (post.sourceId) sourceSet.add(post.sourceId);
+  collaborators.forEach(c => {
+    if (c.id && (profiles.some(np => np.id === c.id) || knownLeaders.some(kl => kl.id === c.id))) {
+      sourceSet.add(c.id);
+    }
+  });
 
+  const isCollab = post.isCollab || collaborators.length > 0;
   return {
     ...post,
     author: primary.name || post.author,
     authorAvatar: primary.avatar || post.authorAvatar,
     sourceId: primary.id,
-    isCollab: post.isCollab || !!collab,
-    collabAuthor: post.collabAuthor || (collab ? collab.name : null),
-    collabAvatar: post.collabAvatar || (collab ? collab.avatar : null),
-    collabUrl: post.collabUrl || (collab ? collab.url : null),
+    isCollab: isCollab,
+    collaborators: collaborators,
+    collabAuthor: collaborators.length > 0 ? collaborators.map(c => c.name).join(' × ') : null,
+    collabAvatar: collaborators[0] ? collaborators[0].avatar : null,
+    collabUrl: collaborators[0] ? collaborators[0].url : null,
     sources: Array.from(sourceSet)
   };
 }
@@ -628,6 +740,9 @@ function filterPosts() {
   if (activeSourceFilter !== 'all') {
     list = list.filter(p => {
       if (Array.isArray(p.sources) && p.sources.includes(activeSourceFilter)) {
+        return true;
+      }
+      if (Array.isArray(p.collaborators) && p.collaborators.some(c => c.id === activeSourceFilter || c.name === activeSourceFilter)) {
         return true;
       }
       if (Array.isArray(p.sharers) && p.sharers.some(s => s.sourceId === activeSourceFilter || s.author === activeSourceFilter)) {
@@ -665,6 +780,7 @@ function renderSourceFilters(profiles, posts) {
   distinctSources.forEach(s => {
     countBySource[s.id] = posts.filter(p => {
       if (Array.isArray(p.sources) && p.sources.includes(s.id)) return true;
+      if (Array.isArray(p.collaborators) && p.collaborators.some(c => c.id === s.id || c.name === s.name)) return true;
       if (Array.isArray(p.sharers) && p.sharers.some(sh => sh.sourceId === s.id || sh.author === s.name)) return true;
       return p.sourceId === s.id || p.author === s.name || p.collabAuthor === s.name;
     }).length;
@@ -823,7 +939,29 @@ function renderFeedPosts(posts) {
     const formattedContent = formatPostText(post.content, hashtags);
     const authorAvatar = post.authorAvatar || `https://graph.facebook.com/${encodeURIComponent(post.sourceId || '')}/picture?type=large`;
     const isVideo = post.mediaType === 'video' || (post.url && (post.url.includes('/videos/') || post.url.includes('/reel/')));
-    const isCollab = post.isCollab && post.collabAuthor;
+    const isCollab = !!(post.isCollab || (Array.isArray(post.collaborators) && post.collaborators.length > 0) || post.collabAuthor);
+
+    // Build all collaborators / co-authors for collab posts
+    let allCollabPax = [];
+    if (isCollab) {
+      allCollabPax.push({
+        id: post.sourceId,
+        name: post.author,
+        avatar: authorAvatar,
+        url: post.url,
+        role: post.authorRole || ''
+      });
+      const collabList = Array.isArray(post.collaborators) && post.collaborators.length > 0
+        ? post.collaborators
+        : (post.collabAuthor ? post.collabAuthor.split(/\s*×\s*|\s*,\s*/).map(n => ({ name: n, avatar: post.collabAvatar, url: post.collabUrl })) : []);
+
+      collabList.forEach(c => {
+        if (!c || !c.name) return;
+        if (!allCollabPax.some(p => p.name.toLowerCase() === c.name.toLowerCase() || (c.id && p.id && p.id.toLowerCase() === c.id.toLowerCase()))) {
+          allCollabPax.push(c);
+        }
+      });
+    }
 
     const isMultiSharer = !!(post.isMultiSharer && Array.isArray(post.sharers) && post.sharers.length > 1);
     const isReshare = !!(post.isReshare && post.resharedPost);
@@ -863,21 +1001,23 @@ function renderFeedPosts(posts) {
           <time class="fb-post-date">${post.dateFormatted || ''} • ${t('feed.sharedByCount', 'Reshared by {count} Candidates').replace('{count}', post.sharers.length)}</time>
         </div>
       </div>
-    ` : (isCollab ? `
+    ` : (isCollab && allCollabPax.length > 1 ? `
       <div class="fb-author-wrap collab-author-wrap">
-        <div class="collab-avatars-cluster">
-          <img src="${authorAvatar}" alt="${post.author}" class="primary-avatar" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
-          <img src="${post.collabAvatar}" alt="${post.collabAuthor}" class="collab-avatar" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
+        <div class="collab-avatars-cluster count-${allCollabPax.length}" title="${allCollabPax.map(p => (p.name + (p.role ? ` (${p.role})` : '')).replace(/"/g, '&quot;')).join(' × ')}">
+          ${allCollabPax.map((p, idx) => `
+            <img src="${(p.avatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico').replace(/"/g, '&quot;')}" alt="${(p.name || '').replace(/"/g, '&quot;')}" class="collab-avatar-item idx-${idx}" title="${(p.name + (p.role ? ` • ${p.role}` : '')).replace(/"/g, '&quot;')}" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
+          `).join('')}
         </div>
-        <div>
+        <div class="collab-info-wrap">
           <div class="fb-author-name collab-names">
-            <span>${post.author}</span>
-            <span class="collab-cross">×</span>
-            <span>${post.collabAuthor}</span>
-            <span class="collab-badge-pill">COLLAB</span>
+            ${allCollabPax.map((p, idx) => `
+              <span class="collab-pax-name" title="${p.name}${p.role ? ` • ${p.role}` : ''}">${p.name}</span>
+              ${idx < allCollabPax.length - 1 ? `<span class="collab-cross">×</span>` : ''}
+            `).join('')}
+            <span class="collab-badge-pill">${allCollabPax.length > 2 ? `COLLAB • ${allCollabPax.length} PAX` : 'COLLAB'}</span>
             ${reshareActionHtml}
           </div>
-          <time class="fb-post-date">${post.dateFormatted || ''} • Joint / Co-authored Update</time>
+          <time class="fb-post-date">${post.dateFormatted || ''} • Joint / Co-authored Statement (${allCollabPax.length} Pax)</time>
         </div>
       </div>
     ` : `

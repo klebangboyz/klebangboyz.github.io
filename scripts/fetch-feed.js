@@ -156,7 +156,12 @@ async function fetchPostMedia(permalink) {
 
       // ONLY allow authentic Facebook user photo uploads and video covers!
       // Excludes stickers (t39.1997-), emojis, reaction sprites (/m1/v/t6/), UI icons, and avatars (-1/)
-      if (!m.includes('t39.30808-6') && !m.includes('t51.71878-10') && !m.includes('t1.6435-9') && !m.includes('t31.0-8')) {
+      if (m.includes('-1/') || m.includes('/m1/v/t6/') || m.includes('t39.1997-') || m.includes('.kf') || m.includes('.srt')) {
+        continue;
+      }
+
+      // Must be user photo/media CDN (t39, t51, t15, t1, t31)
+      if (!m.includes('t39.30808-') && !m.includes('t51.') && !m.includes('t15.') && !m.includes('t1.6435-') && !m.includes('t31.0-') && !m.includes('t1.18169-')) {
         continue;
       }
 
@@ -268,18 +273,33 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
     let mediaType = 'text';
 
     const attachments = target.attachments || target.comet_sections?.content?.story?.attachments;
+    const images = [];
     if (Array.isArray(attachments)) {
       for (const att of attachments) {
         const media = att.media;
-        if (!media) continue;
-        if (media.__typename === 'Video' || att.style_type_renderer?.video) {
-          mediaType = 'video';
-          videoClip = media.playable_url || media.playable_url_quality_hd || '';
-          image = media.preferred_thumbnail?.image?.uri || media.image?.uri || '';
-        } else if (media.image?.uri || media.photo_image?.uri) {
-          if (!image) {
-            image = media.image?.uri || media.photo_image?.uri || '';
-            mediaType = 'image';
+        if (media) {
+          if (media.__typename === 'Video' || att.style_type_renderer?.video) {
+            mediaType = 'video';
+            videoClip = media.playable_url || media.playable_url_quality_hd || '';
+            image = media.preferred_thumbnail?.image?.uri || media.image?.uri || '';
+            if (image) images.push(image);
+          } else if (media.image?.uri || media.photo_image?.uri) {
+            const u = media.image?.uri || media.photo_image?.uri || '';
+            if (u && !u.includes('-1/') && !u.includes('lookaside.fbsbx.com')) {
+              if (!image) image = u;
+              images.push(u);
+            }
+          }
+        }
+        const sub = att.styles?.attachment?.all_subattachments?.nodes || att.subattachments?.nodes || [];
+        for (const sn of sub) {
+          const subMedia = sn.media;
+          if (subMedia) {
+            const subUri = subMedia.viewer_image?.uri || subMedia.image?.uri || subMedia.photo_image?.uri || '';
+            if (subUri && !subUri.includes('-1/') && !subUri.includes('lookaside.fbsbx.com')) {
+              if (!image) image = subUri;
+              images.push(subUri);
+            }
           }
         }
       }
@@ -287,6 +307,7 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
 
     if (!authorName && !message && !image && !videoClip) return null;
 
+    const uniqueImages = Array.from(new Set(images));
     return {
       author: authorName,
       authorAvatar: authorAvatar,
@@ -294,8 +315,50 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
       dateFormatted: timestamp ? new Date(timestamp * 1000).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
       url: permalink,
       image: image,
+      images: uniqueImages,
       videoClip: videoClip,
-      mediaType: mediaType
+      mediaType: mediaType === 'video' ? 'video' : (uniqueImages.length > 1 ? 'gallery' : (uniqueImages.length === 1 ? 'image' : 'text'))
+    };
+  }
+
+  function extractNodeMedia(node, contentStory) {
+    const images = [];
+    let isVideo = false;
+    let videoClip = '';
+
+    const attachments = node?.attachments || contentStory?.attachments || node?.comet_sections?.content?.story?.attachments;
+    if (Array.isArray(attachments)) {
+      for (const att of attachments) {
+        const media = att.media;
+        if (media) {
+          if (media.__typename === 'Video' || att.style_type_renderer?.video) {
+            isVideo = true;
+            videoClip = media.playable_url || media.playable_url_quality_hd || '';
+            const thumb = media.preferred_thumbnail?.image?.uri || media.image?.uri || '';
+            if (thumb && !thumb.includes('-1/') && !thumb.includes('lookaside.fbsbx.com')) images.push(thumb);
+          } else {
+            const uri = media.image?.uri || media.photo_image?.uri || '';
+            if (uri && !uri.includes('-1/') && !uri.includes('lookaside.fbsbx.com')) images.push(uri);
+          }
+        }
+
+        const sub = att.styles?.attachment?.all_subattachments?.nodes || att.subattachments?.nodes || [];
+        for (const sn of sub) {
+          const subMedia = sn.media;
+          if (subMedia) {
+            const subUri = subMedia.viewer_image?.uri || subMedia.image?.uri || subMedia.photo_image?.uri || '';
+            if (subUri && !subUri.includes('-1/') && !subUri.includes('lookaside.fbsbx.com')) images.push(subUri);
+          }
+        }
+      }
+    }
+
+    const uniqueImages = Array.from(new Set(images));
+    return {
+      images: uniqueImages,
+      image: uniqueImages[0] || '',
+      isVideo,
+      videoClip
     };
   }
 
@@ -327,7 +390,11 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
     const actor = (node.actors && node.actors[0]) || (contentStory?.actors && contentStory.actors[0]);
     const authorName = actor?.name || pageAuthor;
 
-    const isVideo = permalink.includes('/videos/') || (node.attachments && node.attachments[0]?.media?.__typename === 'Video');
+    const nodeMedia = extractNodeMedia(node, contentStory);
+    const isVideo = permalink.includes('/videos/') || (node.attachments && node.attachments[0]?.media?.__typename === 'Video') || nodeMedia.isVideo;
+    const postImages = nodeMedia.images.length > 0 ? nodeMedia.images : (reshared?.images || (reshared?.image ? [reshared.image] : []));
+    const postImage = nodeMedia.image || reshared?.image || '';
+    const postMediaType = isVideo ? 'video' : (postImages.length > 1 ? 'gallery' : (postImages.length === 1 ? 'image' : (reshared?.mediaType || 'none')));
 
     posts.push({
       id: node.id || permalink,
@@ -341,9 +408,11 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
       content: message,
       isReshare: !!reshared,
       resharedPost: reshared || null,
-      mediaType: isVideo ? 'video' : (reshared?.mediaType || 'none'),
+      mediaType: postMediaType,
       videoUrl: isVideo ? `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(permalink)}&show_text=0&autoplay=0` : '',
-      image: '',
+      videoClip: nodeMedia.videoClip || reshared?.videoClip || '',
+      image: postImage,
+      images: postImages,
       likes: node.feedback?.reaction_count?.count || 0,
       comments: node.feedback?.comments_count?.total_count || 0,
       shares: node.feedback?.share_count?.count || 0
@@ -368,7 +437,11 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
     const timestamp = s.creation_time || s.publish_time;
     const actor = s.actors && s.actors[0];
     const authorName = actor?.name || pageAuthor;
-    const isVideo = permalink.includes('/videos/');
+    const nodeMedia = extractNodeMedia(s, null);
+    const isVideo = permalink.includes('/videos/') || nodeMedia.isVideo;
+    const postImages = nodeMedia.images.length > 0 ? nodeMedia.images : (reshared?.images || (reshared?.image ? [reshared.image] : []));
+    const postImage = nodeMedia.image || reshared?.image || '';
+    const postMediaType = isVideo ? 'video' : (postImages.length > 1 ? 'gallery' : (postImages.length === 1 ? 'image' : (reshared?.mediaType || 'none')));
 
     posts.push({
       id: s.id || permalink,
@@ -382,9 +455,11 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
       content: message,
       isReshare: !!reshared,
       resharedPost: reshared || null,
-      mediaType: isVideo ? 'video' : (reshared?.mediaType || 'none'),
+      mediaType: postMediaType,
       videoUrl: isVideo ? `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(permalink)}&show_text=0&autoplay=0` : '',
-      image: '',
+      videoClip: nodeMedia.videoClip || reshared?.videoClip || '',
+      image: postImage,
+      images: postImages,
       likes: 0,
       comments: 0,
       shares: 0
@@ -434,19 +509,55 @@ async function main() {
   };
 
   // Full scrape processing:
+  function getPostKey(p) {
+    if (p.id) return `id::${p.id}`;
+    if (p.url) return `url::${p.url.split('?')[0].replace(/\/+$/, '').toLowerCase()}`;
+    return null;
+  }
+
+  // Full scrape processing:
   // 1. Freshly scraped posts from live pages take precedence (reflects changed/edited posts and current media)
   const postMap = new Map();
   const freshlyScrapedUrls = new Set();
 
   for (const p of allPosts) {
     if (postMatchesHashtags(p, hashtags) && isWithinOneYear(p.date)) {
-      const key = p.url || p.id;
+      const key = getPostKey(p);
+      if (!key) continue;
+
       // Sync shared post image if available
       if (p.isReshare && p.resharedPost) {
         if (!p.resharedPost.image && p.image) p.resharedPost.image = p.image;
         if (!p.image && p.resharedPost.image) p.image = p.resharedPost.image;
       }
-      postMap.set(key, p);
+
+      if (postMap.has(key)) {
+        const existing = postMap.get(key);
+        const mergedSources = new Set([...(existing.sources || []), ...(p.sources || [])]);
+        if (p.sourceId) mergedSources.add(p.sourceId);
+        if (existing.sourceId) mergedSources.add(existing.sourceId);
+        existing.sources = Array.from(mergedSources);
+
+        if (Array.isArray(p.collaborators)) {
+          existing.collaborators = existing.collaborators || [];
+          for (const c of p.collaborators) {
+            if (!existing.collaborators.some(ec => ec.id === c.id || ec.name === c.name)) {
+              existing.collaborators.push(c);
+            }
+          }
+        }
+
+        const imgSet = new Set(existing.images || []);
+        for (const img of (p.images || [])) {
+          if (img && !imgSet.has(img)) {
+            imgSet.add(img);
+            existing.images.push(img);
+          }
+        }
+        if (!existing.image && p.image) existing.image = p.image;
+      } else {
+        postMap.set(key, p);
+      }
       if (p.url) freshlyScrapedUrls.add(p.url);
     }
   }
@@ -459,20 +570,37 @@ async function main() {
       const existing = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
       if (existing.posts && Array.isArray(existing.posts)) {
         for (const p of existing.posts) {
-          const key = p.url || p.id;
+          const key = getPostKey(p);
+          if (!key) continue;
 
-          // If already refreshed by the full scrape, keep fresh version but preserve existing image if fresh lacks it
+          // If already refreshed by the full scrape, keep fresh version but preserve existing image/collaborators if fresh lacks it
           if (postMap.has(key)) {
             const fresh = postMap.get(key);
             if (p.image && !fresh.image) {
               fresh.image = p.image;
             }
+            if (p.images && p.images.length > 0 && (!fresh.images || fresh.images.length === 0)) {
+              fresh.images = p.images;
+            }
+            if (Array.isArray(p.sources)) {
+              const sSet = new Set([...(fresh.sources || []), ...p.sources]);
+              fresh.sources = Array.from(sSet);
+            }
+            if (Array.isArray(p.collaborators) && (!fresh.collaborators || fresh.collaborators.length === 0)) {
+              fresh.collaborators = p.collaborators;
+            }
             if (fresh.isReshare && fresh.resharedPost) {
               if (p.resharedPost?.image && !fresh.resharedPost.image) {
                 fresh.resharedPost.image = p.resharedPost.image;
               }
+              if (p.resharedPost?.images && (!fresh.resharedPost.images || fresh.resharedPost.images.length === 0)) {
+                fresh.resharedPost.images = p.resharedPost.images;
+              }
               if (!fresh.image && fresh.resharedPost?.image) {
                 fresh.image = fresh.resharedPost.image;
+              }
+              if ((!fresh.images || fresh.images.length === 0) && fresh.resharedPost?.images) {
+                fresh.images = fresh.resharedPost.images;
               }
             }
             continue;
@@ -523,8 +651,11 @@ async function main() {
   for (const post of finalPosts) {
     const targetUrl = (post.isReshare && post.resharedPost) ? (post.resharedPost.url || post.url) : post.url;
 
-    // Check if we need to fetch multi-photo media (if images array missing or has <= 1 image)
-    if (!post.images || post.images.length <= 1) {
+    // Check if we need to fetch multi-photo media or resolve real CDN photos
+    const hasLookaside = (post.images || []).some(img => img.includes('lookaside.fbsbx.com')) || (post.image && post.image.includes('lookaside.fbsbx.com'));
+    const needsResolution = !post.images || post.images.length === 0 || hasLookaside || (post.images.length <= 1 && post.mediaType !== 'video');
+
+    if (needsResolution) {
       console.log(`Resolving high-res media for: ${targetUrl}...`);
       const media = await fetchPostMedia(targetUrl);
       if (media.images && media.images.length > 0) {
@@ -539,6 +670,14 @@ async function main() {
         post.videoClip = media.videoClip;
         post.mediaType = 'video';
       }
+    }
+
+    // Filter out any lookaside URLs as they cannot render in browsers
+    if (Array.isArray(post.images)) {
+      post.images = post.images.filter(img => !img.includes('lookaside.fbsbx.com'));
+    }
+    if (post.image && post.image.includes('lookaside.fbsbx.com')) {
+      post.image = (post.images && post.images[0]) || '';
     }
 
     // Check local video poster for video posts
@@ -568,6 +707,10 @@ async function main() {
       post.resharedPost.image = post.resharedPost.image || post.image || '';
       post.images = post.images && post.images.length > 0 ? post.images : post.resharedPost.images;
       post.image = post.image || post.resharedPost.image || '';
+      if (post.images && post.images.length > 1 && post.mediaType !== 'video') {
+        post.mediaType = 'gallery';
+        post.resharedPost.mediaType = 'gallery';
+      }
     }
   }
 
@@ -578,6 +721,56 @@ async function main() {
     url: p.url,
     avatar: `https://graph.facebook.com/${encodeURIComponent(extractFacebookId(p.url))}/picture?type=large`
   }));
+
+  // Registry of known community leaders & candidates for Melaka / Bersama
+  const knownLeaders = [
+    {
+      id: 'drbryankek',
+      aliases: ['dr bryan kek', 'drbryankek', 'bryan kek', 'dr bryan'],
+      name: 'Dr Bryan Kek',
+      url: 'https://www.facebook.com/drbryankek',
+      avatar: 'https://graph.facebook.com/drbryankek/picture?type=large',
+      role: 'Wakil BERSAMA N19 Kesidang'
+    },
+    {
+      id: 'Bersamagohan',
+      aliases: ['bersamagohan', 'goh han koon', 'han koon'],
+      name: 'Bersamagohan',
+      url: 'https://www.facebook.com/Bersamagohan',
+      avatar: 'https://graph.facebook.com/Bersamagohan/picture?type=large',
+      role: 'Wakil BERSAMA N15 Pengkalan Batu'
+    },
+    {
+      id: 'bersama.jieyu',
+      aliases: ['young jie yu', 'jie yu', 'bersama.jieyu'],
+      name: 'Young Jie Yu',
+      url: 'https://www.facebook.com/bersama.jieyu',
+      avatar: 'https://graph.facebook.com/bersama.jieyu/picture?type=large',
+      role: 'Wakil BERSAMA N14 Klebang'
+    },
+    {
+      id: 'JomBersamaEthan',
+      aliases: ['jom bersama ethan', 'ethan lim zhi hao', 'ethan lim', 'jombersamaethan'],
+      name: 'Ethan Lim Zhi Hao',
+      url: 'https://www.facebook.com/JomBersamaEthan',
+      avatar: 'https://graph.facebook.com/JomBersamaEthan/picture?type=large',
+      role: 'Wakil BERSAMA N20 Kota Laksamana'
+    },
+    {
+      id: 'gueteck',
+      aliases: ['datuk gue teck', 'gue teck', 'gueteck'],
+      name: 'Datuk Gue Teck',
+      url: 'https://www.facebook.com/gueteck',
+      avatar: 'https://graph.facebook.com/gueteck/picture?type=large',
+      role: 'Wakil BERSAMA Melaka'
+    },
+    {
+      id: 'hazwanmustafa',
+      aliases: ['muhammad hazwan mustafa', 'hazwan mustafa', 'hazwan'],
+      avatar: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='48' fill='#202070'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' fill='#FFD700' font-family='sans-serif' font-weight='800' font-size='34'>HM</text></svg>"),
+      role: 'Wakil BERSAMA N23 Telok Mas'
+    }
+  ];
 
   const enrichedPosts = finalPosts.map(post => {
     const permalink = post.url || '';
@@ -590,33 +783,97 @@ async function main() {
       primary = normalizedProfiles.find(pr => pr.id === post.sourceId) || { id: post.sourceId, name: post.author, avatar: post.authorAvatar };
     }
 
-    let collab = null;
-    if (post.sourceId && post.sourceId !== primary.id) {
-      collab = normalizedProfiles.find(pr => pr.id === post.sourceId);
+    const collaborators = [];
+    const addCollab = (item) => {
+      if (!item || !item.name) return;
+      if (item.id && primary.id && item.id.toLowerCase() === primary.id.toLowerCase()) return;
+      if (item.name.toLowerCase() === (primary.name || '').toLowerCase()) return;
+      if (collaborators.some(c => (c.id && item.id && c.id.toLowerCase() === item.id.toLowerCase()) || c.name.toLowerCase() === item.name.toLowerCase())) {
+        return;
+      }
+      collaborators.push({
+        id: item.id || '',
+        name: item.name,
+        avatar: item.avatar || (item.id ? `https://graph.facebook.com/${encodeURIComponent(item.id)}/picture?type=large` : ''),
+        url: item.url || (item.id ? `https://www.facebook.com/${item.id}` : ''),
+        role: item.role || ''
+      });
+    };
+
+    // If already has collaborators array from previous ingestion, import them
+    if (Array.isArray(post.collaborators)) {
+      post.collaborators.forEach(addCollab);
     }
+
+    // Check post.sources
+    if (Array.isArray(post.sources)) {
+      post.sources.forEach(sid => {
+        if (sid && sid !== primary.id) {
+          const leader = knownLeaders.find(l => l.id.toLowerCase() === sid.toLowerCase()) ||
+                        normalizedProfiles.find(p => p.id && p.id.toLowerCase() === sid.toLowerCase());
+          if (leader) addCollab(leader);
+        }
+      });
+    }
+
+    // If sourceId differs from primary.id
+    if (post.sourceId && post.sourceId !== primary.id) {
+      const leader = knownLeaders.find(l => l.id.toLowerCase() === post.sourceId.toLowerCase()) ||
+                    normalizedProfiles.find(p => p.id && p.id.toLowerCase() === post.sourceId.toLowerCase());
+      if (leader) addCollab(leader);
+    }
+
+    // Special joint statement detection for 2 Oct post (Jejantas Tun Teja Melaka joint press statement)
+    // Post ID: UzpfSTYxNTkzNTQ0MjU0MzMxOjEyMjE0NTY0MjgwMTE1MTM5MDoxNDQ0MTQyMjIwOTY1NTM2 or content/image mentions
+    const isTunTejaJointStatement = (post.id && post.id.includes('122145642801151390')) ||
+      (post.content && (post.content.includes('RM2.075') || post.content.includes('Jejantas Tun Teja'))) ||
+      (post.images && post.images.some(img => img.includes('122145695925151390') || img.includes('122145642639151390')));
+
+    if (isTunTejaJointStatement) {
+      // Co-signatories in joint press conference statement:
+      // Datuk Gue Teck, Muhammad Hazwan Mustafa, Young Jie Yu, Goh Han Koon (Bersamagohan), Dr Bryan Kek, Ethan Lim Zhi Hao
+      const jointSignatories = [
+        knownLeaders.find(l => l.id === 'Bersamagohan'),
+        knownLeaders.find(l => l.id === 'bersama.jieyu'),
+        knownLeaders.find(l => l.id === 'JomBersamaEthan'),
+        knownLeaders.find(l => l.id === 'gueteck'),
+        knownLeaders.find(l => l.id === 'hazwanmustafa')
+      ];
+      jointSignatories.forEach(addCollab);
+    }
+
+    // Content cross-mentions detection
     const contentLower = (post.content || '').toLowerCase();
-    for (const pr of normalizedProfiles) {
-      if (pr.id === primary.id || (collab && pr.id === collab.id)) continue;
-      const nameLower = (pr.name || '').toLowerCase();
-      if ((nameLower && contentLower.includes(nameLower)) || contentLower.includes(pr.id.toLowerCase()) || contentLower.includes('#' + pr.id.toLowerCase())) {
-        if (!collab) collab = pr;
+    for (const leader of knownLeaders) {
+      if (leader.id.toLowerCase() === primary.id.toLowerCase()) continue;
+      const isMentioned = leader.aliases.some(alias => contentLower.includes(alias.toLowerCase()) || contentLower.includes('#' + alias.toLowerCase().replace(/\s+/g, '')));
+      if (isMentioned) {
+        addCollab(leader);
       }
     }
-    const sourceSet = new Set();
-    if (primary.id) sourceSet.add(primary.id);
-    if (collab && collab.id) sourceSet.add(collab.id);
-    if (post.sourceId) sourceSet.add(post.sourceId);
 
+    // Build complete unified sources set including primary and all candidate collaborators
+    const sourceSet = new Set(Array.isArray(post.sources) ? post.sources : []);
+    if (primary.id) sourceSet.add(primary.id);
+    if (post.sourceId) sourceSet.add(post.sourceId);
+    collaborators.forEach(c => {
+      if (c.id && (normalizedProfiles.some(np => np.id === c.id) || knownLeaders.some(kl => kl.id === c.id))) {
+        sourceSet.add(c.id);
+      }
+    });
+
+    const isCollab = collaborators.length > 0;
     return {
       ...post,
       rawAuthor: post.rawAuthor || post.author,
       author: primary.name || post.author,
       authorAvatar: primary.avatar || post.authorAvatar,
       sourceId: primary.id,
-      isCollab: !!collab,
-      collabAuthor: collab ? collab.name : null,
-      collabAvatar: collab ? collab.avatar : null,
-      collabUrl: collab ? collab.url : null,
+      isCollab: isCollab,
+      collaborators: collaborators,
+      collabAuthor: collaborators.length > 0 ? collaborators.map(c => c.name).join(' × ') : null,
+      collabAvatar: collaborators[0] ? collaborators[0].avatar : null,
+      collabUrl: collaborators[0] ? collaborators[0].url : null,
       sources: Array.from(sourceSet)
     };
   });
