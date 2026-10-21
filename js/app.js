@@ -606,6 +606,7 @@ function renderSourceFilters(profiles, posts) {
 
   const distinctSources = [];
   const seen = new Set();
+  const countBySource = {};
 
   (profiles || []).forEach(p => {
     if (p.id && !seen.has(p.id)) {
@@ -622,28 +623,113 @@ function renderSourceFilters(profiles, posts) {
     }
   });
 
+  distinctSources.forEach(s => {
+    countBySource[s.id] = posts.filter(p => {
+      if (Array.isArray(p.sources) && p.sources.includes(s.id)) return true;
+      return p.sourceId === s.id || p.author === s.name || p.collabAuthor === s.name;
+    }).length;
+  });
+
   if (distinctSources.length <= 1) {
     container.innerHTML = '';
     return;
   }
 
+  const activeObj = distinctSources.find(s => s.id === activeSourceFilter);
+  const activeLabel = activeSourceFilter === 'all'
+    ? t('feed.allSources', 'All Channels')
+    : (activeObj ? activeObj.name : activeSourceFilter);
+  const activeCount = countBySource[activeSourceFilter] || posts.length;
+
   container.innerHTML = `
-    <div class="channel-filters-inner" style="display: flex; gap: 0.38rem; align-items: center; flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none;">
-      <button type="button" class="channel-filter-btn active" data-src="all">${t('feed.allSources', 'All Channels')}</button>
-      ${distinctSources.map(s => `
-        <button type="button" class="channel-filter-btn" data-src="${s.id}">
-          ${s.avatar ? `<img src="${s.avatar}" style="width: 18px; height: 18px; border-radius: 50%; object-fit: cover; display: inline-block; vertical-align: middle; margin-right: 5px;" onerror="this.style.display='none'" />` : ''}
-          ${s.name}
-        </button>
-      `).join('')}
+    <div class="channel-filter-widget">
+      <!-- Burger / Collapsible Toggle Button -->
+      <button type="button" class="channel-burger-btn" id="channel-burger-toggle" aria-expanded="false" title="Filter by Channel">
+        <div class="burger-btn-left">
+          <span class="burger-icon-bars" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+          <span class="burger-filter-text">
+            <span class="burger-filter-prefix">${t('feed.filterBy', 'Filter:')}</span>
+            <strong class="burger-active-title" id="channel-active-title">${activeLabel}</strong>
+          </span>
+        </div>
+        <div class="burger-btn-right">
+          <span class="burger-count-badge" id="channel-active-count">${activeCount}</span>
+          <svg class="burger-chevron-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </div>
+      </button>
+
+      <!-- Collapsible Channel Selection Tray -->
+      <div class="channel-collapsible-menu" id="channel-collapsible-menu">
+        <div class="channel-pills-cluster">
+          <button type="button" class="channel-pill-btn ${activeSourceFilter === 'all' ? 'active' : ''}" data-src="all">
+            <span class="pill-dot"></span>
+            <span class="pill-label">${t('feed.allSources', 'All Channels')}</span>
+            <span class="pill-count">${posts.length}</span>
+          </button>
+          ${distinctSources.map(s => `
+            <button type="button" class="channel-pill-btn ${activeSourceFilter === s.id ? 'active' : ''}" data-src="${s.id}">
+              ${s.avatar ? `<img src="${s.avatar}" class="pill-avatar-img" onerror="this.style.display='none'" />` : ''}
+              <span class="pill-label">${s.name}</span>
+              <span class="pill-count">${countBySource[s.id] || 0}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
     </div>
   `;
 
-  container.querySelectorAll('.channel-filter-btn').forEach(btn => {
+  const toggleBtn = container.querySelector('#channel-burger-toggle');
+  const menu = container.querySelector('#channel-collapsible-menu');
+
+  if (toggleBtn && menu) {
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isExpanded = toggleBtn.classList.toggle('expanded');
+      menu.classList.toggle('open', isExpanded);
+      toggleBtn.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!container.contains(e.target) && menu.classList.contains('open')) {
+        menu.classList.remove('open');
+        toggleBtn.classList.remove('expanded');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  container.querySelectorAll('.channel-pill-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      container.querySelectorAll('.channel-filter-btn').forEach(b => b.classList.remove('active'));
+      container.querySelectorAll('.channel-pill-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeSourceFilter = btn.getAttribute('data-src');
+
+      const newActiveObj = distinctSources.find(s => s.id === activeSourceFilter);
+      const newLabel = activeSourceFilter === 'all'
+        ? t('feed.allSources', 'All Channels')
+        : (newActiveObj ? newActiveObj.name : activeSourceFilter);
+      const newCount = countBySource[activeSourceFilter] || posts.length;
+
+      const titleEl = container.querySelector('#channel-active-title');
+      const countEl = container.querySelector('#channel-active-count');
+      if (titleEl) titleEl.textContent = newLabel;
+      if (countEl) countEl.textContent = newCount;
+
+      // Automatically collapse on mobile so user sees the filtered posts right away
+      if (window.innerWidth <= 768 && menu) {
+        menu.classList.remove('open');
+        if (toggleBtn) {
+          toggleBtn.classList.remove('expanded');
+          toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+      }
+
       renderFeedPosts(filterPosts());
     });
   });

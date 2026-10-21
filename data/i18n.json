@@ -44,6 +44,11 @@
       "zh": "全部渠道",
       "ms": "Semua Saluran"
     },
+    "filterBy": {
+      "en": "Filter:",
+      "zh": "筛选渠道:",
+      "ms": "Saluran:"
+    },
     "allTags": {
       "en": "All Tags",
       "zh": "全部标签",
