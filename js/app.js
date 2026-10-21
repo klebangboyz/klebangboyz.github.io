@@ -264,6 +264,34 @@ function applyDynamicBindings() {
   }
 }
 
+function extractHashtags(text) {
+  if (!text) return [];
+  const matches = text.match(/#[a-zA-Z0-9_\u0080-\uFFFF]+/g);
+  if (!matches) return [];
+  return matches.map(t => t.toLowerCase());
+}
+
+function postMatchesHashtags(post, configuredHashtags) {
+  if (!configuredHashtags || configuredHashtags.length === 0) return true;
+  const normalizedTags = configuredHashtags
+    .map(t => t.trim().toLowerCase())
+    .filter(Boolean)
+    .map(t => t.startsWith('#') ? t : '#' + t);
+  if (normalizedTags.length === 0) return true;
+
+  const postText = (post.content || '') + ' ' + (post.resharedPost?.content || '');
+  const actualHashtags = new Set(extractHashtags(postText));
+
+  if (Array.isArray(post.hashtags)) {
+    post.hashtags.forEach(t => {
+      const clean = t.trim().toLowerCase();
+      actualHashtags.add(clean.startsWith('#') ? clean : '#' + clean);
+    });
+  }
+
+  return normalizedTags.some(t => actualHashtags.has(t));
+}
+
 /**
  * 6. Social Feed Ingestion (Strictly Client-Sided RSSHub + Real Data Fallback)
  */
@@ -287,19 +315,8 @@ async function loadSocialFeed() {
   let combinedPosts = [];
   let isLive = false;
   const updateFeedUI = () => {
-    // STRICT GLOBAL HASHTAG FILTERING
-    const strictlyFiltered = combinedPosts.filter(post => {
-      if (hashtags.length === 0) return true;
-      const combinedBody = ((post.content || '') + ' ' + (post.resharedPost?.content || '')).toLowerCase();
-      const tags = Array.isArray(post.hashtags) ? post.hashtags.map(t => t.toLowerCase()) : [];
-      if (post.resharedPost && Array.isArray(post.resharedPost.hashtags)) {
-        tags.push(...post.resharedPost.hashtags.map(t => t.toLowerCase()));
-      }
-      return hashtags.some(ht => {
-        const clean = ht.replace(/^#/, '');
-        return combinedBody.includes(ht) || combinedBody.includes(clean) || tags.some(t => t.includes(clean));
-      });
-    });
+    // STRICT GLOBAL HASHTAG FILTERING: Only include posts that actually contain the hashtag
+    const strictlyFiltered = combinedPosts.filter(post => postMatchesHashtags(post, hashtags));
 
     // Sort strictly newest first
     strictlyFiltered.sort((a, b) => getPostTimestamp(b) - getPostTimestamp(a));
@@ -430,6 +447,7 @@ function parseRssHubData(data, profile) {
       image: parsed.image || item.image || item.thumbnail || '',
       videoClip: parsed.videoClip || '',
       mediaType: parsed.videoClip ? 'video' : (parsed.image ? 'image' : 'text'),
+      hashtags: extractHashtags((parsed.text || item.title || '') + ' ' + (parsed.resharedPost?.content || '')),
       likes: 0,
       comments: 0,
       shares: 0
