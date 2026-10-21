@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- Primary Meta Tags -->
+  <title data-bind="site-name">SUARA BERSAMA</title>
+  <meta name="title" content="SUARA BERSAMA" data-bind="site-name" />
+  <meta name="description" content="Community update hub with multi-channel social media feeds and dynamic hashtag filtering." />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://klebang.boyz.space/" />
+  <meta property="og:title" content="SUARA BERSAMA" data-bind="site-name" />
+  <meta property="og:description" content="Community update hub with multi-channel social media feeds and dynamic hashtag filtering." />
+
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23202070'/><text y='68' x='50' text-anchor='middle' font-size='48' font-family='sans-serif' font-weight='bold' fill='%23EEBD00'>SB</text></svg>" />
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="css/style.css?v=4.9" />
+
+  <!-- Referrer Policy for Social Media CDN Media -->
+  <meta name="referrer" content="no-referrer" />
+</head>
+<body>
+
+  <!-- ========================================================================
+       TOP NAVBAR (Bersama Yellow Signature)
+       ======================================================================== -->
+  <header class="site-header">
+    <div class="nav-container">
+      <a href="./" class="nav-logo">
+        <div class="logo-symbol">SB</div>
+        <div class="logo-text">
+          <span class="logo-title">SUARA BERSAMA</span>
+          <span class="logo-sub">EDISI KLEBANG BOYZ</span>
+        </div>
+      </a>
+
+      <!-- Right Action & Language Selector -->
+      <div class="nav-actions-wrap">
+        <!-- Language Selector -->
+        <div class="lang-selector" aria-label="Language selector">
+          <button type="button" class="lang-btn active" data-lang="en">EN</button>
+          <span class="lang-sep">/</span>
+          <button type="button" class="lang-btn" data-lang="zh">中文</button>
+          <span class="lang-sep">/</span>
+          <button type="button" class="lang-btn" data-lang="ms">BM</button>
+        </div>
+
+        <button type="button" class="btn-refresh" id="refresh-feed-btn" title="Refresh Feed">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M23 4v6h-6"></path>
+            <path d="M1 20v-6h6"></path>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+          <span data-i18n="feed.refreshBtn">Refresh</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="header-spacer"></div>
+
+  <!-- ========================================================================
+       FEED SECTION (PURE SOCIAL FEED ONLY)
+       ======================================================================== -->
+  <main class="section main-feed-section" style="padding-top: 2rem;">
+    <div class="container">
+      <!-- Search & Channel Filters Toolbar -->
+      <div class="feed-toolbar">
+        <div class="feed-toolbar-header">
+          <h2 class="feed-toolbar-title" data-i18n="feed.latestPosts">
+            Latest Updates
+          </h2>
+          <div class="feed-search-wrap">
+            <input type="text" id="feed-search-input" placeholder="Search in posts..." data-i18n-attr="placeholder:feed.searchPlaceholder" class="feed-search-field" />
+          </div>
+        </div>
+        <!-- Channel filter pills on single horizontal row -->
+        <div id="channel-filters-wrap" class="channel-filters-row"></div>
+      </div>
+
+      <!-- Ingested Posts Grid -->
+      <div class="feed-grid" id="facebook-feed-grid">
+        <!-- Dynamically rendered via js/app.js -->
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================================================
+       FOOTER
+       ======================================================================== -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-logo-row">
+          <div class="logo-symbol footer-symbol">SB</div>
+          <span class="footer-site-title" data-bind="site-name">
+            SUARA BERSAMA
+          </span>
+        </div>
+
+        <div class="footer-source-note" data-i18n="footer.sourceNotice">
+          Multi-channel Facebook feed • Filtered strictly for <span data-bind="hashtags">#hashtags</span>
+        </div>
+
+        <div class="footer-meta-row">
+          <span data-i18n="footer.domainLabel">Domain:</span>
+          <span class="footer-domain-badge" data-bind="domain">klebang.boyz.space</span>
+          <span>•</span>
+          <span data-i18n="footer.rightsReserved">All rights reserved.</span>
+          <span>•</span>
+          <a href="config.json" target="_blank" class="footer-config-link">config.json</a>
+          <span>•</span>
+          <a href="data/i18n.json" target="_blank" class="footer-config-link">i18n.json</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Application Logic (loads config.json and data/i18n.json directly) -->
+  <script src="js/app.js?v=4.9"></script>
+</body>
+</html>
