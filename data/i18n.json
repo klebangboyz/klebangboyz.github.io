@@ -118,6 +118,21 @@
       "en": "comments",
       "zh": "评论",
       "ms": "komen"
+    },
+    "candidateCommentary": {
+      "en": "Candidate Commentary",
+      "zh": "团队留言",
+      "ms": "Komen Calon"
+    },
+    "teamReshares": {
+      "en": "{count} SHARES",
+      "zh": "{count} 次联合转发",
+      "ms": "{count} KONGSIAN"
+    },
+    "sharedByCount": {
+      "en": "Reshared by {count} Candidates",
+      "zh": "由 {count} 位候选人同时转发",
+      "ms": "Dikongsi oleh {count} Calon"
     }
   },
   "footer": {

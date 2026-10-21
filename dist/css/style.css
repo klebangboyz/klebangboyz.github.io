@@ -1078,6 +1078,217 @@ button {
 }
 
 /* ==========================================================================
+   MULTI-SHARER / TEAM RESHARED POST CARD STYLES
+   ========================================================================== */
+.multi-sharer-author-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.multi-avatars-cluster {
+  display: flex;
+  align-items: center;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.multi-avatar-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.14);
+  transition: transform 0.2s ease, z-index 0.2s ease;
+  position: relative;
+}
+
+.multi-avatar-img:not(:first-child) {
+  margin-left: -16px;
+}
+
+.multi-avatar-img:hover {
+  transform: translateY(-2px) scale(1.08);
+  z-index: 10;
+}
+
+.multi-avatar-img.avatar-idx-0 {
+  z-index: 2;
+  border-color: var(--primary-yellow);
+}
+
+.multi-avatar-img.avatar-idx-1 {
+  z-index: 1;
+}
+
+.multi-sharer-names {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  line-height: 1.3;
+}
+
+.multi-author-name-item {
+  font-family: var(--font-cabinet);
+  font-weight: 800;
+  color: var(--primary-blue);
+  font-size: 1rem;
+}
+
+.multi-share-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, #f6cb49 0%, #f3ba2f 100%);
+  color: var(--primary-blue);
+  font-family: var(--font-cabinet);
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.18rem 0.55rem;
+  border-radius: 9999px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(246, 203, 73, 0.35);
+}
+
+.multi-share-pill svg {
+  color: var(--primary-blue);
+}
+
+/* Candidate Commentary Section */
+.team-sharers-section {
+  padding: 0.2rem 1.35rem 0.85rem;
+}
+
+.team-sharers-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-cabinet);
+  font-weight: 800;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--primary-blue);
+  margin-bottom: 0.65rem;
+}
+
+.team-sharers-title svg {
+  color: #1877f2;
+}
+
+.team-sharers-count {
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.team-sharers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.sharer-card {
+  background: #f8faff;
+  border: 1.5px solid #e2eaf5;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.sharer-card:hover {
+  border-color: #cbdcf4;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.sharer-card.is-focused {
+  background: #fffdf5;
+  border-color: var(--primary-yellow);
+  box-shadow: 0 4px 14px rgba(246, 203, 73, 0.25);
+}
+
+.sharer-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.sharer-card-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+
+.sharer-card-info {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.sharer-card-author {
+  font-family: var(--font-cabinet);
+  font-weight: 800;
+  font-size: 0.88rem;
+  color: var(--primary-blue);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sharer-card-time {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.sharer-view-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #ebf3ff;
+  color: #1877f2;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.sharer-view-link:hover {
+  background: #1877f2;
+  color: #ffffff;
+  transform: scale(1.1);
+}
+
+.sharer-card-bubble {
+  font-size: 0.94rem;
+  font-weight: 500;
+  color: var(--color-text-body);
+  line-height: 1.5;
+  background: #ffffff;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  border-left: 3px solid var(--primary-yellow);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.sharer-card-bubble .quote-text {
+  display: block;
+}
+
+/* ==========================================================================
    FACEBOOK READER: RESHARED / EMBEDDED POST INSET
    ========================================================================== */
 .reshare-action-badge {
@@ -1176,8 +1387,15 @@ button {
   transition: transform 0.35s ease, filter 0.35s ease;
 }
 
+.fb-post-header {
+  padding: 1.4rem 1.5rem 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .fb-post-content {
-  padding: 0 1.4rem 1.25rem;
+  padding: 0 1.5rem 1.5rem;
   font-size: 0.98rem;
   color: var(--color-text-body);
   line-height: 1.7;
@@ -1203,14 +1421,133 @@ button {
 }
 
 /* ==========================================================================
+   MULTI-PHOTO GALLERIES (Adaptive Grid, Unclipped & Interactive)
+   ========================================================================== */
+.fb-media-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: calc(100% - 3rem);
+  margin: 0.5rem 1.5rem 1.35rem;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.fb-reshared-embed .fb-media-gallery {
+  width: 100%;
+  margin: 0.75rem 0 0;
+  border-radius: 0 0 14px 14px;
+  box-shadow: none;
+}
+
+.gallery-row-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  height: 250px;
+}
+
+.gallery-row-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  height: 170px;
+}
+
+.gallery-item {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  background: #111111;
+  height: 100%;
+}
+
+.gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.28s ease, filter 0.28s ease;
+}
+
+.gallery-item:hover img {
+  transform: scale(1.03);
+  filter: brightness(0.95);
+}
+
+.gallery-item-more-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-cabinet);
+  font-size: 1.6rem;
+  font-weight: 800;
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+/* 2 Photos */
+.fb-media-gallery.gallery-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  height: 280px;
+}
+
+/* 3 Photos */
+.fb-media-gallery.gallery-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 200px 140px;
+  gap: 4px;
+}
+.fb-media-gallery.gallery-3 .gallery-item:first-child {
+  grid-column: span 2;
+}
+
+/* 4 Photos */
+.fb-media-gallery.gallery-4 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 180px 180px;
+  gap: 4px;
+}
+
+@media (max-width: 600px) {
+  .fb-media-gallery {
+    width: calc(100% - 1.5rem);
+    margin: 0.5rem 0.75rem 1rem;
+  }
+  .fb-reshared-embed .fb-media-gallery {
+    width: 100%;
+    margin: 0.75rem 0 0;
+  }
+  .gallery-row-top {
+    height: 180px;
+  }
+  .gallery-row-bottom {
+    height: 120px;
+  }
+  .fb-media-gallery.gallery-2 {
+    height: 200px;
+  }
+}
+
+/* ==========================================================================
    DYNAMIC MEDIA SCALING & THUMBNAILS (Adaptive, Zero Fixed Dimension Locks)
    ========================================================================== */
 .fb-post-media,
 .fb-video-media {
   position: relative;
-  width: calc(100% - 2.8rem);
-  margin: 0 1.4rem 1.25rem;
-  border-radius: 14px;
+  width: calc(100% - 3rem);
+  margin: 0.5rem 1.5rem 1.35rem;
+  border-radius: 16px;
   overflow: hidden;
   background-color: transparent;
   display: flex;
@@ -2112,9 +2449,10 @@ button {
 
   /* 5. Photos & Video Scaling on Mobile */
   .fb-post-media,
-  .fb-video-media {
-    width: calc(100% - 1rem);
-    margin: 0 auto 0.75rem;
+  .fb-video-media,
+  .fb-media-gallery {
+    width: calc(100% - 1.2rem);
+    margin: 0.25rem 0.6rem 0.75rem;
     border-radius: 12px;
   }
 
@@ -2234,12 +2572,19 @@ button {
    ========================================================================== */
 .fb-media-gallery {
   display: grid;
-  gap: 4px;
-  border-radius: 14px;
+  gap: 6px;
+  border-radius: 16px;
   overflow: hidden;
   background: #0d0f22;
-  margin: 0.65rem 0;
-  width: 100%;
+  width: calc(100% - 3rem);
+  margin: 0.5rem 1.5rem 1.35rem;
+  box-sizing: border-box;
+}
+
+.fb-reshared-embed .fb-media-gallery {
+  width: calc(100% - 2rem);
+  margin: 0.35rem 1rem 1rem;
+  border-radius: 10px;
 }
 
 .fb-media-gallery.gallery-1 {

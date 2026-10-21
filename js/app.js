@@ -535,6 +535,22 @@ function parsePostHtml(html) {
  * Resolves canonical author and collab partners for cross-posted / collaborative posts
  */
 function enrichPostWithCollabData(post, profiles) {
+  // 0. If this is already a multi-sharer consolidated post, keep and enrich all sharers
+  if (post.isMultiSharer && Array.isArray(post.sharers)) {
+    const sourceSet = new Set(Array.isArray(post.sources) ? post.sources : []);
+    post.sharers.forEach(s => {
+      if (s.sourceId) sourceSet.add(s.sourceId);
+      const prof = profiles.find(pr => pr.id === s.sourceId);
+      if (prof && (!s.authorAvatar || s.authorAvatar.includes('graph.facebook.com'))) {
+        s.authorAvatar = prof.avatar || s.authorAvatar;
+      }
+    });
+    return {
+      ...post,
+      sources: Array.from(sourceSet)
+    };
+  }
+
   const permalink = post.url || '';
   
   // 1. Identify which configured profile owns the permalink (canonical owner)
@@ -614,6 +630,9 @@ function filterPosts() {
       if (Array.isArray(p.sources) && p.sources.includes(activeSourceFilter)) {
         return true;
       }
+      if (Array.isArray(p.sharers) && p.sharers.some(s => s.sourceId === activeSourceFilter || s.author === activeSourceFilter)) {
+        return true;
+      }
       return p.sourceId === activeSourceFilter || p.author === activeSourceFilter || p.collabAuthor === activeSourceFilter;
     });
   }
@@ -646,6 +665,7 @@ function renderSourceFilters(profiles, posts) {
   distinctSources.forEach(s => {
     countBySource[s.id] = posts.filter(p => {
       if (Array.isArray(p.sources) && p.sources.includes(s.id)) return true;
+      if (Array.isArray(p.sharers) && p.sharers.some(sh => sh.sourceId === s.id || sh.author === s.name)) return true;
       return p.sourceId === s.id || p.author === s.name || p.collabAuthor === s.name;
     }).length;
   });
@@ -805,6 +825,7 @@ function renderFeedPosts(posts) {
     const isVideo = post.mediaType === 'video' || (post.url && (post.url.includes('/videos/') || post.url.includes('/reel/')));
     const isCollab = post.isCollab && post.collabAuthor;
 
+    const isMultiSharer = !!(post.isMultiSharer && Array.isArray(post.sharers) && post.sharers.length > 1);
     const isReshare = !!(post.isReshare && post.resharedPost);
     const reshared = post.resharedPost || {};
     // For shared posts, link directly to the original post URL
@@ -819,7 +840,30 @@ function renderFeedPosts(posts) {
       </span>
     ` : '';
 
-    const authorHeaderHtml = isCollab ? `
+    const authorHeaderHtml = isMultiSharer ? `
+      <div class="fb-author-wrap multi-sharer-author-wrap">
+        <div class="multi-avatars-cluster">
+          ${post.sharers.map((s, idx) => `
+            <img src="${s.authorAvatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico'}" alt="${s.author}" class="multi-avatar-img avatar-idx-${idx}" title="${s.author}" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
+          `).join('')}
+        </div>
+        <div>
+          <div class="fb-author-name multi-sharer-names">
+            ${post.sharers.map((s, idx) => `
+              <span class="multi-author-name-item">${s.author}</span>
+              ${idx < post.sharers.length - 1 ? `<span class="collab-cross">&</span>` : ''}
+            `).join('')}
+            <span class="multi-share-pill">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/>
+              </svg>
+              ${t('feed.teamReshares', '{count} SHARES').replace('{count}', post.sharers.length)}
+            </span>
+          </div>
+          <time class="fb-post-date">${post.dateFormatted || ''} • ${t('feed.sharedByCount', 'Reshared by {count} Candidates').replace('{count}', post.sharers.length)}</time>
+        </div>
+      </div>
+    ` : (isCollab ? `
       <div class="fb-author-wrap collab-author-wrap">
         <div class="collab-avatars-cluster">
           <img src="${authorAvatar}" alt="${post.author}" class="primary-avatar" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
@@ -850,7 +894,7 @@ function renderFeedPosts(posts) {
           <time class="fb-post-date">${post.dateFormatted || ''}</time>
         </div>
       </div>
-    `;
+    `);
 
     return `
       <article class="fb-post-card">
@@ -870,11 +914,50 @@ function renderFeedPosts(posts) {
         </div>
 
         ${isReshare ? `
-          ${post.content && formatPostText(post.content).trim() ? `
-            <div class="fb-post-content resharer-commentary">
-              ${formatPostText(post.content)}
+          ${isMultiSharer ? `
+            <div class="team-sharers-section">
+              <div class="team-sharers-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+                </svg>
+                <span>${t('feed.candidateCommentary', 'Candidate Commentary')}</span>
+                <span class="team-sharers-count">(${post.sharers.length})</span>
+              </div>
+              <div class="team-sharers-grid">
+                ${post.sharers.map(s => {
+                  const cleanedQuote = formatPostText(s.commentary, hashtags);
+                  const isFocused = (activeSourceFilter === s.sourceId || activeSourceFilter === s.author);
+                  return `
+                    <div class="sharer-card ${isFocused ? 'is-focused' : ''}">
+                      <div class="sharer-card-header">
+                        <img src="${s.authorAvatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico'}" alt="${s.author}" class="sharer-card-avatar" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
+                        <div class="sharer-card-info">
+                          <strong class="sharer-card-author">${s.author}</strong>
+                          <span class="sharer-card-time">${s.dateFormatted || ''}</span>
+                        </div>
+                        ${s.url ? `
+                          <a href="${s.url}" target="_blank" rel="noopener noreferrer" class="sharer-view-link" title="View ${s.author}'s post on Facebook">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                            </svg>
+                          </a>
+                        ` : ''}
+                      </div>
+                      <div class="sharer-card-bubble">
+                        <span class="quote-text">${cleanedQuote || '<em>Shared this update</em>'}</span>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
             </div>
-          ` : ''}
+          ` : `
+            ${post.content && formatPostText(post.content).trim() ? `
+              <div class="fb-post-content resharer-commentary">
+                ${formatPostText(post.content)}
+              </div>
+            ` : ''}
+          `}
 
           <div class="fb-reshared-embed">
             <div class="reshared-embed-header">
@@ -1077,11 +1160,28 @@ function setupInteractions() {
   setupLightboxEvents();
 }
 
+function deduplicateImageUrls(imgs) {
+  if (!Array.isArray(imgs)) return [];
+  const seen = new Set();
+  const res = [];
+  for (const img of imgs) {
+    if (!img) continue;
+    const m = img.match(/\d+_\d+_\d+_n\.jpg/);
+    const key = m ? m[0] : img.split('?')[0];
+    if (!seen.has(key)) {
+      seen.add(key);
+      res.push(img);
+    }
+  }
+  return res;
+}
+
 /**
  * Renders single or multi-photo galleries with click-to-expand
  */
 function renderPostMediaHtml(post, isReshare = false) {
-  const images = (post.images && post.images.length > 0) ? post.images : (post.image ? [post.image] : []);
+  const rawImages = (post.images && post.images.length > 0) ? post.images : (post.image ? [post.image] : []);
+  const images = deduplicateImageUrls(rawImages);
   if (images.length === 0) return '';
 
   const postId = encodeURIComponent(post.id || post.url || '');
@@ -1094,7 +1194,32 @@ function renderPostMediaHtml(post, isReshare = false) {
     `;
   }
 
-  const galleryClass = images.length === 2 ? 'gallery-2' : (images.length === 3 ? 'gallery-3' : (images.length === 4 ? 'gallery-4' : 'gallery-more'));
+  if (images.length >= 5) {
+    const displayTop = images.slice(0, 2);
+    const displayBottom = images.slice(2, 5);
+    const remaining = images.length - 5;
+    return `
+      <div class="fb-media-gallery gallery-5">
+        <div class="gallery-row-top">
+          ${displayTop.map((img, i) => `
+            <div class="gallery-item" onclick="window.openMediaLightbox('${postId}', ${i})" title="View photo ${i + 1} of ${images.length}">
+              <img src="${img}" alt="${post.author || 'Photo'} ${i + 1}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';" />
+            </div>
+          `).join('')}
+        </div>
+        <div class="gallery-row-bottom">
+          ${displayBottom.map((img, i) => `
+            <div class="gallery-item" onclick="window.openMediaLightbox('${postId}', ${i + 2})" title="View photo ${i + 3} of ${images.length}">
+              <img src="${img}" alt="${post.author || 'Photo'} ${i + 3}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';" />
+              ${(i === 2 && remaining > 0) ? `<div class="gallery-item-more-overlay">+${remaining}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  const galleryClass = images.length === 2 ? 'gallery-2' : (images.length === 3 ? 'gallery-3' : 'gallery-4');
   const displayItems = images.slice(0, 4);
 
   return `
@@ -1102,7 +1227,6 @@ function renderPostMediaHtml(post, isReshare = false) {
       ${displayItems.map((img, i) => `
         <div class="gallery-item" onclick="window.openMediaLightbox('${postId}', ${i})" title="View photo ${i + 1} of ${images.length}">
           <img src="${img}" alt="${post.author || 'Photo'} ${i + 1}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';" />
-          ${(i === 3 && images.length > 4) ? `<div class="gallery-item-more-overlay">+${images.length - 3}</div>` : ''}
         </div>
       `).join('')}
     </div>
@@ -1133,11 +1257,13 @@ window.openMediaLightbox = function(encodedPostId, startIndex = 0) {
     });
   }
 
-  const imgList = (post.images && post.images.length > 0)
+  const rawImgList = (post.images && post.images.length > 0)
     ? post.images
     : ((post.resharedPost?.images && post.resharedPost.images.length > 0)
       ? post.resharedPost.images
       : (post.image ? [post.image] : []));
+
+  const imgList = deduplicateImageUrls(rawImgList);
 
   imgList.forEach(src => {
     if (!items.some(it => it.src === src)) {

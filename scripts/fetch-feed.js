@@ -333,6 +333,7 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
       id: node.id || permalink,
       sourceId: pageId,
       author: authorName,
+      rawAuthor: authorName,
       authorAvatar: pageAvatar,
       date: timestamp ? new Date(timestamp * 1000).toISOString() : new Date().toISOString(),
       dateFormatted: timestamp ? new Date(timestamp * 1000).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
@@ -373,6 +374,7 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
       id: s.id || permalink,
       sourceId: pageId,
       author: authorName,
+      rawAuthor: authorName,
       authorAvatar: pageAvatar,
       date: timestamp ? new Date(timestamp * 1000).toISOString() : new Date().toISOString(),
       dateFormatted: timestamp ? new Date(timestamp * 1000).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
@@ -607,6 +609,7 @@ async function main() {
 
     return {
       ...post,
+      rawAuthor: post.rawAuthor || post.author,
       author: primary.name || post.author,
       authorAvatar: primary.avatar || post.authorAvatar,
       sourceId: primary.id,
@@ -618,18 +621,127 @@ async function main() {
     };
   });
 
+  // Consolidate identical reshared posts across multiple candidate pages into unified community reshare cards
+  const finalUnifiedPosts = consolidateResharedPosts(enrichedPosts);
+
   // Sort newest first
-  enrichedPosts.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  finalUnifiedPosts.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
   const outputData = {
     lastUpdated: new Date().toISOString(),
     hashtags: config.hashtags || config.globalHashtags || [],
     sourcesCount: sources.length,
-    posts: enrichedPosts
+    posts: finalUnifiedPosts
   };
 
   fs.writeFileSync(outputPath, JSON.stringify(outputData, null, 2), 'utf8');
-  console.log(`Successfully updated ${outputPath} with ${enrichedPosts.length} real posts (including collab attributions).`);
+  console.log(`Successfully updated ${outputPath} with ${finalUnifiedPosts.length} real posts (including multi-sharer attributions).`);
+}
+
+/**
+ * Consolidate posts when multiple candidates reshare the exact same original post
+ */
+function consolidateResharedPosts(posts) {
+  const result = [];
+  const reshareGroups = new Map();
+
+  function getReshareKey(p) {
+    if (!p.isReshare || !p.resharedPost) return null;
+    const u = (p.resharedPost.url || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
+    if (u) return u;
+    return (p.resharedPost.author || '').trim().toLowerCase() + '::' + (p.resharedPost.content || '').slice(0, 100);
+  }
+
+  for (const post of posts) {
+    const rKey = getReshareKey(post);
+    if (rKey) {
+      if (!reshareGroups.has(rKey)) {
+        reshareGroups.set(rKey, []);
+      }
+      reshareGroups.get(rKey).push(post);
+    } else {
+      result.push(post);
+    }
+  }
+
+  for (const [rKey, group] of reshareGroups.entries()) {
+    if (group.length === 1) {
+      result.push(group[0]);
+    } else {
+      // Multiple candidates reshared the exact same post!
+      group.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      const primary = group[0];
+      const allSources = new Set();
+      const sharers = [];
+
+      for (const p of group) {
+        if (Array.isArray(p.sources)) {
+          p.sources.forEach(s => allSources.add(s));
+        }
+        if (p.sourceId) allSources.add(p.sourceId);
+
+        let sharerName = p.rawAuthor || p.author;
+        if (sharerName.includes('Ethan Lim Zhi Hao') || p.sourceId === 'JomBersamaEthan') {
+          sharerName = 'Ethan Lim Zhi Hao';
+        }
+
+        sharers.push({
+          sourceId: p.sourceId,
+          author: sharerName,
+          authorAvatar: p.authorAvatar,
+          commentary: p.content || '',
+          date: p.date,
+          dateFormatted: p.dateFormatted,
+          url: p.url
+        });
+      }
+
+      // Aggregate all unique images from all group versions and resharedPost
+      let bestImages = [];
+      const imageSet = new Set();
+      const addImgs = (imgs) => {
+        if (!Array.isArray(imgs)) return;
+        for (const img of imgs) {
+          if (img && !imageSet.has(img)) {
+            imageSet.add(img);
+            bestImages.push(img);
+          }
+        }
+      };
+
+      for (const p of group) {
+        if (p.resharedPost?.images) addImgs(p.resharedPost.images);
+        if (p.images) addImgs(p.images);
+        if (p.resharedPost?.image) addImgs([p.resharedPost.image]);
+        if (p.image) addImgs([p.image]);
+      }
+
+      const namesCombined = sharers.map(s => s.author).join(' & ');
+
+      const consolidated = {
+        ...primary,
+        id: `multi_reshare_${Buffer.from(rKey).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)}`,
+        author: namesCombined,
+        isMultiSharer: true,
+        sharesCount: sharers.length,
+        sharers: sharers,
+        sources: Array.from(allSources),
+        images: bestImages,
+        image: bestImages[0] || primary.image,
+        mediaType: bestImages.length > 1 ? 'gallery' : (primary.mediaType || 'image')
+      };
+
+      if (consolidated.resharedPost) {
+        consolidated.resharedPost.images = bestImages;
+        consolidated.resharedPost.image = bestImages[0] || consolidated.resharedPost.image;
+      }
+
+      result.push(consolidated);
+    }
+  }
+
+  result.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  return result;
 }
 
 main().catch(err => {

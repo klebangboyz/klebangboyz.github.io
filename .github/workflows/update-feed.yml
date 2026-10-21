@@ -2,8 +2,8 @@ name: Update Facebook Feed
 
 on:
   schedule:
-    # Automatically check and pull new posts every 15 minutes
-    - cron: '*/15 * * * *'
+    # Automatically check and pull new posts at the fastest GitHub Actions frequency (every 5 minutes - GitHub's minimum limit)
+    - cron: '*/5 * * * *'
   push:
     paths:
       - 'config.json'
