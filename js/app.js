@@ -341,20 +341,22 @@ async function loadSocialFeed() {
     console.warn('data/feed.json fallback error:', e);
   }
 
-  // Step 2: Strictly Client-Sided RSSHub Ingestion (updates live posts seamlessly)
-  fetchRssHubClientSide(appConfig).then(rsshubPosts => {
-    if (rsshubPosts && rsshubPosts.length > 0) {
-      const existingIds = new Set(combinedPosts.map(p => p.id || p.url));
-      const newPosts = rsshubPosts.filter(p => !existingIds.has(p.id) && !existingIds.has(p.url));
-      if (newPosts.length > 0) {
-        combinedPosts.unshift(...newPosts.map(p => enrichPostWithCollabData(p, profiles)));
-        isLive = true;
-        updateFeedUI();
+  // Step 2: Optional Client-Sided RSSHub Ingestion (disabled by default; GitHub Actions syncs feed.json every 15m without CORS)
+  if (appConfig && appConfig.enableClientRssHub === true) {
+    fetchRssHubClientSide(appConfig).then(rsshubPosts => {
+      if (rsshubPosts && rsshubPosts.length > 0) {
+        const existingIds = new Set(combinedPosts.map(p => p.id || p.url));
+        const newPosts = rsshubPosts.filter(p => !existingIds.has(p.id) && !existingIds.has(p.url));
+        if (newPosts.length > 0) {
+          combinedPosts.unshift(...newPosts.map(p => enrichPostWithCollabData(p, profiles)));
+          isLive = true;
+          updateFeedUI();
+        }
       }
-    }
-  }).catch(rssErr => {
-    console.warn('Client-side RSSHub fetch info:', rssErr);
-  });
+    }).catch(rssErr => {
+      console.warn('Client-side RSSHub fetch info:', rssErr);
+    });
+  }
 }
 
 /**
@@ -868,9 +870,9 @@ function renderFeedPosts(posts) {
         </div>
 
         ${isReshare ? `
-          ${post.content && post.content.trim() ? `
+          ${post.content && formatPostText(post.content).trim() ? `
             <div class="fb-post-content resharer-commentary">
-              ${formattedContent}
+              ${formatPostText(post.content)}
             </div>
           ` : ''}
 
@@ -897,67 +899,79 @@ function renderFeedPosts(posts) {
               ` : ''}
             </div>
 
-            ${reshared.content ? `
+            ${reshared.content && formatPostText(reshared.content).trim() ? `
               <div class="reshared-post-content">
-                ${formatPostText(reshared.content, hashtags)}
+                ${formatPostText(reshared.content)}
               </div>
             ` : ''}
 
             ${reshared.videoClip ? `
               <div class="reshared-media-wrap">
-                <video controls playsinline preload="metadata" poster="${reshared.image || ''}" style="width: 100%;">
+                <video controls playsinline preload="metadata" poster="${reshared.image || post.image || ''}" style="width: 100%;">
                   <source src="${reshared.videoClip}" type="video/mp4">
                   Your browser does not support HTML5 video.
                 </video>
               </div>
-            ` : (reshared.image || (reshared.mediaType === 'video' || (reshared.url && (reshared.url.includes('/videos/') || reshared.url.includes('/reel/'))))) ? `
-              <div class="reshared-media-wrap">
-                ${(reshared.mediaType === 'video' || (reshared.url && (reshared.url.includes('/videos/') || reshared.url.includes('/reel/')))) ? `
-                  <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" style="position:relative; display:block;" title="Watch video on Facebook">
-                    <img src="${reshared.image || ''}" alt="Reshared video" class="reshared-media-image" loading="lazy" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(reshared.author || 'Video')}')" />
-                    <div class="fb-video-play-overlay">
-                      <div class="fb-video-play-btn">
-                        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 3px;">
-                          <path d="M8 5v14l11-7z"/>
-                        </svg>
+            ` : (() => {
+              const reshareVidMatch = (reshared.url || '').match(/(?:videos|reel)\/(\d+)/);
+              const reshareThumb = reshared.image || post.image || (reshareVidMatch ? `data/images/poster_${reshareVidMatch[1]}.jpg` : '');
+              const isReshareVideo = (reshared.mediaType === 'video' || (reshared.url && (reshared.url.includes('/videos/') || reshared.url.includes('/reel/'))));
+
+              if (!reshareThumb && !isReshareVideo) return '';
+
+              return `
+                <div class="reshared-media-wrap">
+                  ${isReshareVideo ? `
+                    <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" style="position:relative; display:block;" title="Watch video on Facebook">
+                      <img src="${reshareThumb}" alt="Reshared video" class="reshared-media-image" loading="lazy" referrerpolicy="no-referrer" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(reshared.author || 'Video')}')" />
+                      <div class="fb-video-play-overlay">
+                        <div class="fb-video-play-btn">
+                          <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 3px;">
+                            <path d="M8 5v14l11-7z"/>
+                          </svg>
+                        </div>
+                        <div class="fb-video-badge">
+                          <span>Watch Video</span>
+                        </div>
                       </div>
-                      <div class="fb-video-badge">
-                        <span>Watch Video</span>
-                      </div>
-                    </div>
-                  </a>
-                ` : `
-                  <img src="${reshared.image}" alt="Reshared media" class="reshared-media-image" loading="lazy" onerror="this.closest('.reshared-media-wrap').style.display='none';" />
-                `}
-              </div>
-            ` : ''}
+                    </a>
+                  ` : `
+                    <img src="${reshareThumb}" alt="Reshared media" class="reshared-media-image" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.reshared-media-wrap').style.display='none';" />
+                  `}
+                </div>
+              `;
+            })()}
           </div>
         ` : `
           ${isVideo ? `
             <div class="fb-video-media">
-              ${post.videoClip ? `
-                <video controls playsinline preload="metadata" poster="${post.image || ''}">
-                  <source src="${post.videoClip}" type="video/mp4">
-                  Your browser does not support HTML5 video.
-                </video>
-              ` : `
-                <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" title="Watch video on Facebook">
-                  <img src="${post.image || ''}" alt="${post.author || 'Facebook Video'}" loading="lazy" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(post.author || 'Facebook Video')}')" />
-                  <div class="fb-video-play-overlay">
-                    <div class="fb-video-play-btn">
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 3px;">
-                        <path d="M8 5v14l11-7z"/>
-                      </svg>
+              ${(() => {
+                const vidMatch = (post.url || '').match(/(?:videos|reel)\/(\d+)/);
+                const videoThumb = post.image || (vidMatch ? `data/images/poster_${vidMatch[1]}.jpg` : '');
+                return post.videoClip ? `
+                  <video controls playsinline preload="metadata" poster="${videoThumb}">
+                    <source src="${post.videoClip}" type="video/mp4">
+                    Your browser does not support HTML5 video.
+                  </video>
+                ` : `
+                  <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" title="Watch video on Facebook">
+                    <img src="${videoThumb}" alt="${post.author || 'Facebook Video'}" loading="lazy" referrerpolicy="no-referrer" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(post.author || 'Facebook Video')}')" />
+                    <div class="fb-video-play-overlay">
+                      <div class="fb-video-play-btn">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 3px;">
+                          <path d="M8 5v14l11-7z"/>
+                        </svg>
+                      </div>
+                      <div class="fb-video-badge">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                        </svg>
+                        <span>Watch on Facebook</span>
+                      </div>
                     </div>
-                    <div class="fb-video-badge">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                      </svg>
-                      <span>Watch on Facebook</span>
-                    </div>
-                  </div>
-                </a>
-              `}
+                  </a>
+                `;
+              })()}
             </div>
           ` : (post.image ? `
             <div class="fb-post-media">
@@ -965,22 +979,12 @@ function renderFeedPosts(posts) {
             </div>
           ` : '')}
 
-          <div class="fb-post-content">
-            ${formattedContent}
-          </div>
+          ${formattedContent.trim() ? `
+            <div class="fb-post-content">
+              ${formattedContent}
+            </div>
+          ` : ''}
         `}
-
-        <div class="fb-post-stats">
-          <div class="fb-reactions">
-            <span class="reaction-icons">
-              <span class="reaction-dot reaction-like">👍</span>
-              <span class="reaction-dot reaction-heart">❤️</span>
-            </span>
-            <span>${post.likes || 1}</span>
-            <span style="margin: 0 4px;">•</span>
-            <span>${post.comments || 0} ${commentsText}</span>
-          </div>
-        </div>
       </article>
     `;
   }).join('');
@@ -989,20 +993,30 @@ function renderFeedPosts(posts) {
 }
 
 /**
- * Text formatter preserving all paragraph line breaks and highlighting hashtags
+ * Text formatter: removes all hashtags and extra blank lines for clean news display
  */
-function formatPostText(text, globalHashtags = []) {
+function formatPostText(text) {
   if (!text) return '';
 
-  let safe = text
+  // 1. Remove all hashtags (e.g. #palliativecare, #sb, #drbryankek)
+  let cleaned = text.replace(/#[\w\u0080-\uffff]+/g, '');
+
+  // 2. Clean up multiple blank lines or redundant spaces
+  cleaned = cleaned
+    .split('\n')
+    .map(line => line.trim())
+    .filter((line, idx, arr) => {
+      if (!line && idx > 0 && !arr[idx - 1]) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
+
+  // 3. Escape HTML entities
+  let safe = cleaned
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-
-  // Render hashtags cleanly without yellow highlight badges
-  safe = safe.replace(/#([\w\u0080-\uffff]+)/g, (match) => {
-    return `<span class="hashtag-link">${match}</span>`;
-  });
 
   return safe;
 }
@@ -1058,6 +1072,16 @@ function setupInteractions() {
  * 8. Fallback Thumbnail Generator for Videos
  */
 window.handleVideoThumbnailFallback = function(img, authorName) {
+  // If we can extract a video ID from the enclosing link's href, try local poster first before SVG
+  const link = img.closest('a');
+  const href = link ? link.getAttribute('href') : '';
+  const match = href ? href.match(/(?:videos|reel)\/(\d+)/) : null;
+  if (match && !img.dataset.triedPoster) {
+    img.dataset.triedPoster = 'true';
+    img.src = `data/images/poster_${match[1]}.jpg`;
+    return;
+  }
+
   img.onerror = null;
   const decoded = decodeURIComponent(authorName || 'Facebook Video');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">

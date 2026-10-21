@@ -2,8 +2,8 @@ name: Update Facebook Feed
 
 on:
   schedule:
-    # Automatically check and pull new posts every 2 hours
-    - cron: '0 */2 * * *'
+    # Automatically check and pull new posts every 15 minutes
+    - cron: '*/15 * * * *'
   push:
     paths:
       - 'config.json'

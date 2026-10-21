@@ -106,15 +106,27 @@ async function fetchPostPhoto(permalink) {
     const html = await fetchUrl(pluginUrl, 3, 'curl/8.0.0');
     if (!html) return '';
 
-    // Extract all scontent images
+    const candidates = [];
+
+    // 1. Extract all <img> scontent images
     const regex = /<img[^>]+src=["'](https:\/\/[^"'>]*?scontent[^"'>]*?)["'][^>]*>/gi;
     let match;
-    const candidates = [];
     while ((match = regex.exec(html)) !== null) {
       const url = match[1].replace(/&amp;/g, '&');
       // Filter out tiny avatars (s40x40 or 30808-1)
-      if (!url.includes('s40x40') && !url.includes('30808-1/')) {
+      if (!url.includes('s40x40') && !url.includes('30808-1/') && !url.includes('/picture')) {
         candidates.push(url);
+      }
+    }
+
+    // 2. Extract JSON-escaped and embedded scontent URLs (especially for video posters)
+    const jsonRegex = /https:[\\\/A-Za-z0-9_.\-%?=&;]+scontent[\\\/A-Za-z0-9_.\-%?=&;]+/gi;
+    const jsonMatches = html.match(jsonRegex) || [];
+    for (let m of jsonMatches) {
+      m = m.replace(/\\u002526/g, '&').replace(/\\u00253D/g, '=').replace(/\\u00252F/g, '/').replace(/\\\//g, '/').replace(/&amp;/g, '&');
+      if (m.endsWith('\\')) m = m.slice(0, -1);
+      if (!m.includes('s40x40') && !m.includes('30808-1/') && !m.includes('/picture') && (m.includes('.jpg') || m.includes('.png') || m.includes('dst-jpg') || m.includes('stp='))) {
+        candidates.push(m);
       }
     }
 
@@ -351,47 +363,146 @@ async function main() {
     }
   }
 
-  // Load existing posts to preserve historical feed items THAT MATCH configured hashtags
+  // 1-Year Limit Cutoff (365 days)
+  const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+  const cutoffDate = new Date(Date.now() - ONE_YEAR_MS);
+  const isWithinOneYear = (dateStr) => {
+    if (!dateStr) return true;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return true;
+    return d >= cutoffDate;
+  };
+
+  // Full scrape processing:
+  // 1. Freshly scraped posts from live pages take precedence (reflects changed/edited posts and current media)
   const postMap = new Map();
+  const freshlyScrapedUrls = new Set();
+
+  for (const p of allPosts) {
+    if (postMatchesHashtags(p, hashtags) && isWithinOneYear(p.date)) {
+      const key = p.url || p.id;
+      // Sync shared post image if available
+      if (p.isReshare && p.resharedPost) {
+        if (!p.resharedPost.image && p.image) p.resharedPost.image = p.image;
+        if (!p.image && p.resharedPost.image) p.image = p.resharedPost.image;
+      }
+      postMap.set(key, p);
+      if (p.url) freshlyScrapedUrls.add(p.url);
+    }
+  }
+
+  // 2. Load historical posts:
+  // - Drop posts older than 1 year
+  // - Verify if historical posts not seen on the live page still exist (detect deleted posts)
   if (fs.existsSync(outputPath)) {
     try {
       const existing = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
       if (existing.posts && Array.isArray(existing.posts)) {
-        existing.posts.forEach(p => {
-          // STRICT HASHTAG FILTER: Only retain historical posts that match current hashtags
-          if (postMatchesHashtags(p, hashtags)) {
-            if (p.url || p.id) postMap.set(p.url || p.id, p);
-          }
-        });
-      }
-    } catch (e) {}
-  }
+        for (const p of existing.posts) {
+          const key = p.url || p.id;
 
-  // Merge freshly fetched posts (only if they match hashtags)
-  for (const p of allPosts) {
-    if (postMatchesHashtags(p, hashtags)) {
-      const key = p.url || p.id;
-      const existing = postMap.get(key);
-      if (existing && existing.image && !p.image) {
-        p.image = existing.image;
-        p.mediaType = 'image';
+          // If already refreshed by the full scrape, keep fresh version but preserve existing image if fresh lacks it
+          if (postMap.has(key)) {
+            const fresh = postMap.get(key);
+            if (p.image && !fresh.image) {
+              fresh.image = p.image;
+            }
+            if (fresh.isReshare && fresh.resharedPost) {
+              if (p.resharedPost?.image && !fresh.resharedPost.image) {
+                fresh.resharedPost.image = p.resharedPost.image;
+              }
+              if (!fresh.image && fresh.resharedPost?.image) {
+                fresh.image = fresh.resharedPost.image;
+              }
+            }
+            continue;
+          }
+
+          // 1-Year age limit: drop historical posts older than 1 year
+          if (!isWithinOneYear(p.date)) {
+            console.log(`Dropping post older than 1 year: ${p.url || p.id} (${p.date})`);
+            continue;
+          }
+
+          // Strict hashtag filter
+          if (!postMatchesHashtags(p, hashtags)) {
+            continue;
+          }
+
+          // Deleted post detection: check if historical post is still alive on Facebook
+          if (p.url) {
+            console.log(`Checking if historical post still exists: ${p.url}...`);
+            const checkUrl = `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(p.url)}&show_text=0`;
+            const checkHtml = await fetchUrl(checkUrl, 2, 'curl/8.0.0');
+            if (checkHtml && (
+              checkHtml.includes("This content isn't available right now") ||
+              checkHtml.includes("may have been removed") ||
+              checkHtml.includes("Page Not Found")
+            )) {
+              console.log(`-> Detected deleted post on Facebook, dropping: ${p.url}`);
+              continue;
+            }
+          }
+
+          if (p.isReshare && p.resharedPost) {
+            if (!p.resharedPost.image && p.image) p.resharedPost.image = p.image;
+            if (!p.image && p.resharedPost.image) p.image = p.resharedPost.image;
+          }
+
+          postMap.set(key, p);
+        }
       }
-      postMap.set(key, p);
+    } catch (e) {
+      console.warn('Error verifying historical posts:', e.message);
     }
   }
 
-  const finalPosts = Array.from(postMap.values()).filter(p => postMatchesHashtags(p, hashtags));
+  const finalPosts = Array.from(postMap.values()).filter(p => postMatchesHashtags(p, hashtags) && isWithinOneYear(p.date));
 
-  // Fetch real photos for non-video posts that don't yet have an image
+  // Fetch real photos/posters for posts that don't yet have an image
   for (const post of finalPosts) {
-    if (post.mediaType !== 'video' && !post.image) {
-      console.log(`Resolving real photo for: ${post.url}...`);
+    // 1. If reshare has no image on either post or resharedPost, attempt to resolve photo
+    if (post.isReshare && post.resharedPost && !post.resharedPost.image && !post.image) {
+      const targetUrl = post.resharedPost.url || post.url;
+      console.log(`Resolving photo for shared post: ${targetUrl}...`);
+      const photoUrl = await fetchPostPhoto(targetUrl);
+      if (photoUrl) {
+        post.resharedPost.image = photoUrl;
+        post.image = photoUrl;
+        post.resharedPost.mediaType = 'image';
+        console.log(`-> Got shared post photo: ${photoUrl.slice(0, 80)}...`);
+      }
+    }
+
+    if (!post.image) {
+      // 2. Check if a local video poster exists
+      const vidMatch = (post.url || '').match(/(?:videos|reel)\/(\d+)/);
+      if (vidMatch) {
+        const localRel = `data/images/poster_${vidMatch[1]}.jpg`;
+        const localAbs = path.resolve(__dirname, '..', localRel);
+        if (fs.existsSync(localAbs)) {
+          post.image = localRel;
+          console.log(`-> Assigned local video poster for ${post.url}: ${localRel}`);
+        }
+      }
+    }
+
+    if (!post.image) {
+      console.log(`Resolving real photo/thumbnail for: ${post.url}...`);
       const photoUrl = await fetchPostPhoto(post.url);
       if (photoUrl) {
         post.image = photoUrl;
-        post.mediaType = 'image';
-        console.log(`-> Got photo: ${photoUrl.slice(0, 80)}...`);
+        if (post.mediaType !== 'video') {
+          post.mediaType = 'image';
+        }
+        console.log(`-> Got media photo/thumbnail: ${photoUrl.slice(0, 80)}...`);
       }
+    }
+
+    // Keep reshare image synchronized
+    if (post.isReshare && post.resharedPost) {
+      if (!post.resharedPost.image && post.image) post.resharedPost.image = post.image;
+      if (!post.image && post.resharedPost.image) post.image = post.resharedPost.image;
     }
   }
 
