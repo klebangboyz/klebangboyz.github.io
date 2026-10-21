@@ -906,7 +906,7 @@ function renderFeedPosts(posts) {
             ` : ''}
 
             ${reshared.videoClip ? `
-              <div class="reshared-media-wrap">
+              <div class="reshared-media-wrap" onclick="window.openMediaLightbox('${encodeURIComponent(post.id || post.url)}', 0)" style="cursor: pointer;">
                 <video controls playsinline preload="metadata" poster="${reshared.image || post.image || ''}" style="width: 100%;">
                   <source src="${reshared.videoClip}" type="video/mp4">
                   Your browser does not support HTML5 video.
@@ -914,15 +914,13 @@ function renderFeedPosts(posts) {
               </div>
             ` : (() => {
               const reshareVidMatch = (reshared.url || '').match(/(?:videos|reel)\/(\d+)/);
-              const reshareThumb = reshared.image || post.image || (reshareVidMatch ? `data/images/poster_${reshareVidMatch[1]}.jpg` : '');
               const isReshareVideo = (reshared.mediaType === 'video' || (reshared.url && (reshared.url.includes('/videos/') || reshared.url.includes('/reel/'))));
 
-              if (!reshareThumb && !isReshareVideo) return '';
-
-              return `
-                <div class="reshared-media-wrap">
-                  ${isReshareVideo ? `
-                    <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" style="position:relative; display:block;" title="Watch video on Facebook">
+              if (isReshareVideo) {
+                const reshareThumb = reshared.image || post.image || (reshareVidMatch ? `data/images/poster_${reshareVidMatch[1]}.jpg` : '');
+                return `
+                  <div class="reshared-media-wrap" onclick="window.openMediaLightbox('${encodeURIComponent(post.id || post.url)}', 0)" style="cursor: pointer;">
+                    <div class="fb-video-cover-wrap" style="position:relative; display:block;" title="Click to view video">
                       <img src="${reshareThumb}" alt="Reshared video" class="reshared-media-image" loading="lazy" referrerpolicy="no-referrer" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(reshared.author || 'Video')}')" />
                       <div class="fb-video-play-overlay">
                         <div class="fb-video-play-btn">
@@ -934,17 +932,29 @@ function renderFeedPosts(posts) {
                           <span>Watch Video</span>
                         </div>
                       </div>
-                    </a>
-                  ` : `
-                    <img src="${reshareThumb}" alt="Reshared media" class="reshared-media-image" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.reshared-media-wrap').style.display='none';" />
-                  `}
-                </div>
-              `;
+                    </div>
+                  </div>
+                `;
+              }
+
+              // Multi-photo gallery for reshares
+              const sharedPostObj = {
+                id: post.id || post.url,
+                author: reshared.author || post.author,
+                authorAvatar: reshared.authorAvatar || post.authorAvatar,
+                url: targetPostUrl,
+                images: (reshared.images && reshared.images.length > 0)
+                  ? reshared.images
+                  : ((post.images && post.images.length > 0)
+                    ? post.images
+                    : (reshared.image || post.image ? [reshared.image || post.image] : []))
+              };
+              return renderPostMediaHtml(sharedPostObj, true);
             })()}
           </div>
         ` : `
           ${isVideo ? `
-            <div class="fb-video-media">
+            <div class="fb-video-media" onclick="window.openMediaLightbox('${encodeURIComponent(post.id || post.url)}', 0)" style="cursor: pointer;">
               ${(() => {
                 const vidMatch = (post.url || '').match(/(?:videos|reel)\/(\d+)/);
                 const videoThumb = post.image || (vidMatch ? `data/images/poster_${vidMatch[1]}.jpg` : '');
@@ -954,7 +964,7 @@ function renderFeedPosts(posts) {
                     Your browser does not support HTML5 video.
                   </video>
                 ` : `
-                  <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" title="Watch video on Facebook">
+                  <div class="fb-video-cover-wrap" title="Click to view video">
                     <img src="${videoThumb}" alt="${post.author || 'Facebook Video'}" loading="lazy" referrerpolicy="no-referrer" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(post.author || 'Facebook Video')}')" />
                     <div class="fb-video-play-overlay">
                       <div class="fb-video-play-btn">
@@ -966,18 +976,14 @@ function renderFeedPosts(posts) {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
                         </svg>
-                        <span>Watch on Facebook</span>
+                        <span>Watch Video</span>
                       </div>
                     </div>
-                  </a>
+                  </div>
                 `;
               })()}
             </div>
-          ` : (post.image ? `
-            <div class="fb-post-media">
-              <img src="${post.image}" alt="Facebook media" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.fb-post-media').style.display='none';" />
-            </div>
-          ` : '')}
+          ` : renderPostMediaHtml(post, false)}
 
           ${formattedContent.trim() ? `
             <div class="fb-post-content">
@@ -1066,6 +1072,224 @@ function setupInteractions() {
       renderFeedPosts(filtered);
     });
   }
+
+  // Setup media lightbox click and keyboard controls
+  setupLightboxEvents();
+}
+
+/**
+ * Renders single or multi-photo galleries with click-to-expand
+ */
+function renderPostMediaHtml(post, isReshare = false) {
+  const images = (post.images && post.images.length > 0) ? post.images : (post.image ? [post.image] : []);
+  if (images.length === 0) return '';
+
+  const postId = encodeURIComponent(post.id || post.url || '');
+
+  if (images.length === 1) {
+    return `
+      <div class="${isReshare ? 'reshared-media-wrap' : 'fb-post-media'}" onclick="window.openMediaLightbox('${postId}', 0)" title="Click to view full resolution photo" style="cursor: pointer;">
+        <img src="${images[0]}" alt="${post.author || 'Media'}" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.fb-post-media, .reshared-media-wrap').style.display='none';" />
+      </div>
+    `;
+  }
+
+  const galleryClass = images.length === 2 ? 'gallery-2' : (images.length === 3 ? 'gallery-3' : (images.length === 4 ? 'gallery-4' : 'gallery-more'));
+  const displayItems = images.slice(0, 4);
+
+  return `
+    <div class="fb-media-gallery ${galleryClass}">
+      ${displayItems.map((img, i) => `
+        <div class="gallery-item" onclick="window.openMediaLightbox('${postId}', ${i})" title="View photo ${i + 1} of ${images.length}">
+          <img src="${img}" alt="${post.author || 'Photo'} ${i + 1}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';" />
+          ${(i === 3 && images.length > 4) ? `<div class="gallery-item-more-overlay">+${images.length - 3}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+/**
+ * Interactive Media Lightbox System
+ */
+let currentLightboxMedia = [];
+let currentLightboxIndex = 0;
+let currentLightboxAuthor = {};
+
+window.openMediaLightbox = function(encodedPostId, startIndex = 0) {
+  const targetId = decodeURIComponent(encodedPostId);
+  const post = (allFeedPosts || []).find(p => p.id === targetId || p.url === targetId);
+  if (!post) return;
+
+  const items = [];
+  const isVideo = post.mediaType === 'video' || (post.url && (post.url.includes('/videos/') || post.url.includes('/reel/')));
+  
+  if (isVideo) {
+    items.push({
+      type: 'video',
+      src: post.videoClip || '',
+      poster: post.image || '',
+      fbUrl: post.url || '#'
+    });
+  }
+
+  const imgList = (post.images && post.images.length > 0)
+    ? post.images
+    : ((post.resharedPost?.images && post.resharedPost.images.length > 0)
+      ? post.resharedPost.images
+      : (post.image ? [post.image] : []));
+
+  imgList.forEach(src => {
+    if (!items.some(it => it.src === src)) {
+      items.push({ type: 'image', src, fbUrl: post.url || '#' });
+    }
+  });
+
+  if (items.length === 0) return;
+
+  currentLightboxMedia = items;
+  currentLightboxIndex = Math.min(Math.max(0, startIndex), items.length - 1);
+  currentLightboxAuthor = {
+    name: post.author || 'Facebook Post',
+    avatar: post.authorAvatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico',
+    url: post.url || '#'
+  };
+
+  updateLightboxUI();
+
+  const modal = document.getElementById('media-lightbox-modal');
+  if (modal) {
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+};
+
+window.closeMediaLightbox = function() {
+  const modal = document.getElementById('media-lightbox-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    const stage = document.getElementById('lightbox-content-wrap');
+    if (stage) stage.innerHTML = '';
+  }
+};
+
+function updateLightboxUI() {
+  if (!currentLightboxMedia || currentLightboxMedia.length === 0) return;
+
+  const currentItem = currentLightboxMedia[currentLightboxIndex];
+  const avatarEl = document.getElementById('lightbox-author-avatar');
+  const nameEl = document.getElementById('lightbox-author-name');
+  const counterEl = document.getElementById('lightbox-counter');
+  const fbLinkEl = document.getElementById('lightbox-fb-link');
+  const stageEl = document.getElementById('lightbox-content-wrap');
+  const thumbsEl = document.getElementById('lightbox-thumbs-bar');
+  const prevBtn = document.getElementById('lightbox-prev-btn');
+  const nextBtn = document.getElementById('lightbox-next-btn');
+
+  if (avatarEl) avatarEl.src = currentLightboxAuthor.avatar || '';
+  if (nameEl) nameEl.textContent = currentLightboxAuthor.name || 'Facebook';
+  if (counterEl) {
+    counterEl.textContent = currentLightboxMedia.length > 1
+      ? `${currentLightboxIndex + 1} / ${currentLightboxMedia.length}`
+      : '';
+  }
+  if (fbLinkEl) fbLinkEl.href = currentLightboxAuthor.url || '#';
+
+  if (prevBtn) prevBtn.style.display = currentLightboxMedia.length > 1 ? 'flex' : 'none';
+  if (nextBtn) nextBtn.style.display = currentLightboxMedia.length > 1 ? 'flex' : 'none';
+
+  if (stageEl) {
+    if (currentItem.type === 'video') {
+      if (currentItem.src) {
+        stageEl.innerHTML = `
+          <video controls autoplay playsinline poster="${currentItem.poster || ''}">
+            <source src="${currentItem.src}" type="video/mp4">
+            Your browser does not support HTML5 video.
+          </video>
+        `;
+      } else {
+        stageEl.innerHTML = `
+          <div style="text-align: center; color: #fff;">
+            <img src="${currentItem.poster || ''}" alt="Video preview" style="max-height: 60vh; border-radius: 8px; margin-bottom: 1rem;" />
+            <div>
+              <a href="${currentItem.fbUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-primary-yellow">
+                Watch Full Video on Facebook
+              </a>
+            </div>
+          </div>
+        `;
+      }
+    } else {
+      stageEl.innerHTML = `
+        <img src="${currentItem.src}" alt="${currentLightboxAuthor.name}" referrerpolicy="no-referrer" />
+      `;
+    }
+  }
+
+  // Thumbnails bar
+  if (thumbsEl) {
+    if (currentLightboxMedia.length > 1) {
+      thumbsEl.innerHTML = currentLightboxMedia.map((it, i) => `
+        <div class="lightbox-thumb ${i === currentLightboxIndex ? 'active' : ''}" onclick="selectLightboxIndex(${i})">
+          <img src="${it.type === 'video' ? (it.poster || '') : it.src}" alt="Thumb ${i + 1}" referrerpolicy="no-referrer" />
+        </div>
+      `).join('');
+      thumbsEl.style.display = 'flex';
+    } else {
+      thumbsEl.innerHTML = '';
+      thumbsEl.style.display = 'none';
+    }
+  }
+}
+
+window.selectLightboxIndex = function(idx) {
+  if (idx < 0 || idx >= currentLightboxMedia.length) return;
+  currentLightboxIndex = idx;
+  updateLightboxUI();
+};
+
+window.nextMediaLightbox = function() {
+  if (currentLightboxMedia.length <= 1) return;
+  currentLightboxIndex = (currentLightboxIndex + 1) % currentLightboxMedia.length;
+  updateLightboxUI();
+};
+
+window.prevMediaLightbox = function() {
+  if (currentLightboxMedia.length <= 1) return;
+  currentLightboxIndex = (currentLightboxIndex - 1 + currentLightboxMedia.length) % currentLightboxMedia.length;
+  updateLightboxUI();
+};
+
+function setupLightboxEvents() {
+  const closeBtn = document.getElementById('lightbox-close-btn');
+  const prevBtn = document.getElementById('lightbox-prev-btn');
+  const nextBtn = document.getElementById('lightbox-next-btn');
+  const modal = document.getElementById('media-lightbox-modal');
+  const stage = document.getElementById('lightbox-stage');
+
+  if (closeBtn) closeBtn.addEventListener('click', closeMediaLightbox);
+  if (prevBtn) prevBtn.addEventListener('click', (e) => { e.stopPropagation(); prevMediaLightbox(); });
+  if (nextBtn) nextBtn.addEventListener('click', (e) => { e.stopPropagation(); nextMediaLightbox(); });
+
+  // Click on backdrop (outside image/video) closes lightbox
+  if (stage) {
+    stage.addEventListener('click', (e) => {
+      if (e.target === stage || e.target.id === 'lightbox-content-wrap') {
+        closeMediaLightbox();
+      }
+    });
+  }
+
+  // Keyboard navigation
+  window.addEventListener('keydown', (e) => {
+    if (!modal || !modal.classList.contains('active')) return;
+    if (e.key === 'Escape') closeMediaLightbox();
+    if (e.key === 'ArrowRight') nextMediaLightbox();
+    if (e.key === 'ArrowLeft') prevMediaLightbox();
+  });
 }
 
 /**

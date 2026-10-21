@@ -92,51 +92,109 @@ function fetchUrl(url, maxRedirects = 5, customUserAgent = 'Mozilla/5.0 (compati
   });
 }
 
+function extractResolutionScore(url) {
+  if (
+    url.includes('t39.1997-') ||
+    url.includes('t39.2365-') ||
+    url.includes('t39.20818-') ||
+    url.includes('/m1/v/t6/') ||
+    url.includes('-1/') ||
+    url.includes('/picture') ||
+    url.includes('emoji.php') ||
+    url.includes('/rsrc.php/') ||
+    url.includes('static.xx.fbcdn.net')
+  ) {
+    return -1;
+  }
+
+  // Check for max dimension if present (e.g. mx1536x1536, mx960x1280)
+  const mxMatch = url.match(/mx([0-9]+)x([0-9]+)/i);
+  if (mxMatch) {
+    return parseInt(mxMatch[1], 10) * parseInt(mxMatch[2], 10);
+  }
+
+  // Check for downscaled thumbnail dimension
+  const downscaleMatch = url.match(/[_/][sp]([0-9]+)x([0-9]+)/i) || url.match(/ctp=[sp]([0-9]+)x([0-9]+)/i);
+  if (downscaleMatch) {
+    const w = parseInt(downscaleMatch[1], 10);
+    const h = parseInt(downscaleMatch[2], 10);
+    return w * h;
+  }
+
+  // Original uncompressed / unresized upload
+  return 10000000;
+}
+
 /**
- * Fetch real high-res photo for a post via Facebook plugin endpoint using curl UA
+ * Fetch all real high-res photos and video for a post
  */
-async function fetchPostPhoto(permalink) {
-  if (!permalink) return '';
+async function fetchPostMedia(permalink) {
+  if (!permalink) return { images: [], videoUrl: '', videoClip: '', isVideo: false };
+
   const isVideo = permalink.includes('/videos/') || permalink.includes('/reel/');
   const pluginUrl = isVideo
     ? `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(permalink)}&show_text=0&autoplay=0`
-    : `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(permalink)}&show_text=0`;
+    : `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(permalink)}&show_text=1`;
 
   try {
-    const html = await fetchUrl(pluginUrl, 3, 'curl/8.0.0');
-    if (!html) return '';
-
-    const candidates = [];
-
-    // 1. Extract all <img> scontent images
-    const regex = /<img[^>]+src=["'](https:\/\/[^"'>]*?scontent[^"'>]*?)["'][^>]*>/gi;
-    let match;
-    while ((match = regex.exec(html)) !== null) {
-      const url = match[1].replace(/&amp;/g, '&');
-      // Filter out tiny avatars (s40x40 or 30808-1)
-      if (!url.includes('s40x40') && !url.includes('30808-1/') && !url.includes('/picture')) {
-        candidates.push(url);
-      }
+    const htmlPlugin = await fetchUrl(pluginUrl, 3, 'curl/8.0.0');
+    let htmlRaw = '';
+    if (!isVideo) {
+      htmlRaw = await fetchUrl(permalink, 5, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
     }
 
-    // 2. Extract JSON-escaped and embedded scontent URLs (especially for video posters)
+    const combined = (htmlRaw || '') + ' ' + (htmlPlugin || '');
     const jsonRegex = /https:[\\\/A-Za-z0-9_.\-%?=&;]+scontent[\\\/A-Za-z0-9_.\-%?=&;]+/gi;
-    const jsonMatches = html.match(jsonRegex) || [];
-    for (let m of jsonMatches) {
+    const matches = combined.match(jsonRegex) || [];
+
+    const photoMap = new Map();
+
+    for (let m of matches) {
       m = m.replace(/\\u002526/g, '&').replace(/\\u00253D/g, '=').replace(/\\u00252F/g, '/').replace(/\\\//g, '/').replace(/&amp;/g, '&');
-      if (m.endsWith('\\')) m = m.slice(0, -1);
-      if (!m.includes('s40x40') && !m.includes('30808-1/') && !m.includes('/picture') && (m.includes('.jpg') || m.includes('.png') || m.includes('dst-jpg') || m.includes('stp='))) {
-        candidates.push(m);
+      const endIdx = m.search(/["'\s<>\\]/);
+      if (endIdx !== -1) m = m.substring(0, endIdx);
+
+      // ONLY allow authentic Facebook user photo uploads and video covers!
+      // Excludes stickers (t39.1997-), emojis, reaction sprites (/m1/v/t6/), UI icons, and avatars (-1/)
+      if (!m.includes('t39.30808-6') && !m.includes('t51.71878-10') && !m.includes('t1.6435-9') && !m.includes('t31.0-8')) {
+        continue;
+      }
+
+      const score = extractResolutionScore(m);
+      if (score < 50000) continue; // Skip stickers and low-res thumbnails
+
+      const idMatch = m.match(/\/([0-9]+_[0-9]+_[0-9]+_[a-z0-9]+)/i) || m.match(/\/([^\/?#]+\.(?:jpg|png|webp))/i);
+      const key = idMatch ? idMatch[1] : m.split('?')[0];
+
+      if (!photoMap.has(key) || score > photoMap.get(key).score) {
+        photoMap.set(key, { url: m, score });
       }
     }
 
-    if (candidates.length > 0) {
-      return candidates[0];
+    const images = Array.from(photoMap.values()).map(x => x.url);
+
+    let videoClip = '';
+    const videoMatch = combined.match(/<video[^>]+src=["']([^"']+)["']/i) || combined.match(/"playable_url(?:_quality_hd)?":\s*"([^"]+)"/i);
+    if (videoMatch) {
+      videoClip = videoMatch[1].replace(/\\u002526/g, '&').replace(/\\u00252F/g, '/').replace(/\\\//g, '/').replace(/&amp;/g, '&');
     }
+
+    return {
+      images,
+      videoUrl: isVideo ? pluginUrl : '',
+      videoClip,
+      isVideo: isVideo || !!videoClip
+    };
   } catch (e) {
-    console.warn('Could not fetch photo for:', permalink, e.message);
+    console.warn('Could not fetch media for:', permalink, e.message);
   }
-  return '';
+
+  return { images: [], videoUrl: '', videoClip: '', isVideo: false };
+}
+
+async function fetchPostPhoto(permalink) {
+  const media = await fetchPostMedia(permalink);
+  return media.images[0] || '';
 }
 
 function parseFacebookHtml(html, pageId, globalHashtags = []) {
@@ -459,50 +517,55 @@ async function main() {
 
   const finalPosts = Array.from(postMap.values()).filter(p => postMatchesHashtags(p, hashtags) && isWithinOneYear(p.date));
 
-  // Fetch real photos/posters for posts that don't yet have an image
+  // Fetch real photos/posters/galleries for posts
   for (const post of finalPosts) {
-    // 1. If reshare has no image on either post or resharedPost, attempt to resolve photo
-    if (post.isReshare && post.resharedPost && !post.resharedPost.image && !post.image) {
-      const targetUrl = post.resharedPost.url || post.url;
-      console.log(`Resolving photo for shared post: ${targetUrl}...`);
-      const photoUrl = await fetchPostPhoto(targetUrl);
-      if (photoUrl) {
-        post.resharedPost.image = photoUrl;
-        post.image = photoUrl;
-        post.resharedPost.mediaType = 'image';
-        console.log(`-> Got shared post photo: ${photoUrl.slice(0, 80)}...`);
+    const targetUrl = (post.isReshare && post.resharedPost) ? (post.resharedPost.url || post.url) : post.url;
+
+    // Check if we need to fetch multi-photo media (if images array missing or has <= 1 image)
+    if (!post.images || post.images.length <= 1) {
+      console.log(`Resolving high-res media for: ${targetUrl}...`);
+      const media = await fetchPostMedia(targetUrl);
+      if (media.images && media.images.length > 0) {
+        post.images = media.images;
+        post.image = media.images[0];
+        if (post.mediaType !== 'video') {
+          post.mediaType = media.images.length > 1 ? 'gallery' : 'image';
+        }
+        console.log(`-> Got ${media.images.length} high-res photo(s) for ${targetUrl}`);
+      }
+      if (media.videoClip && !post.videoClip) {
+        post.videoClip = media.videoClip;
+        post.mediaType = 'video';
       }
     }
 
-    if (!post.image) {
-      // 2. Check if a local video poster exists
+    // Check local video poster for video posts
+    if (post.mediaType === 'video' && (!post.image || !post.images || post.images.length === 0)) {
       const vidMatch = (post.url || '').match(/(?:videos|reel)\/(\d+)/);
       if (vidMatch) {
         const localRel = `data/images/poster_${vidMatch[1]}.jpg`;
         const localAbs = path.resolve(__dirname, '..', localRel);
         if (fs.existsSync(localAbs)) {
           post.image = localRel;
+          post.images = [localRel];
           console.log(`-> Assigned local video poster for ${post.url}: ${localRel}`);
         }
       }
     }
 
-    if (!post.image) {
-      console.log(`Resolving real photo/thumbnail for: ${post.url}...`);
-      const photoUrl = await fetchPostPhoto(post.url);
-      if (photoUrl) {
-        post.image = photoUrl;
-        if (post.mediaType !== 'video') {
-          post.mediaType = 'image';
-        }
-        console.log(`-> Got media photo/thumbnail: ${photoUrl.slice(0, 80)}...`);
-      }
+    if (post.image && (!post.images || post.images.length === 0)) {
+      post.images = [post.image];
+    }
+    if (post.images && post.images.length > 0 && !post.image) {
+      post.image = post.images[0];
     }
 
-    // Keep reshare image synchronized
+    // Keep reshare images synchronized
     if (post.isReshare && post.resharedPost) {
-      if (!post.resharedPost.image && post.image) post.resharedPost.image = post.image;
-      if (!post.image && post.resharedPost.image) post.image = post.resharedPost.image;
+      post.resharedPost.images = post.resharedPost.images || post.images || [];
+      post.resharedPost.image = post.resharedPost.image || post.image || '';
+      post.images = post.images && post.images.length > 0 ? post.images : post.resharedPost.images;
+      post.image = post.image || post.resharedPost.image || '';
     }
   }
 

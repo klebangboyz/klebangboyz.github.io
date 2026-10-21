@@ -164,25 +164,58 @@
           </div>
         </div>
 
-        <div class="footer-source-note" data-i18n="footer.sourceNotice">
-          Multi-channel Facebook feed • Filtered strictly for <span data-bind="hashtags">#hashtags</span>
-        </div>
-
-        <div class="footer-meta-row">
-          <span data-i18n="footer.domainLabel">Domain:</span>
-          <span class="footer-domain-badge" data-bind="domain">klebang.boyz.space</span>
-          <span>•</span>
-          <span data-i18n="footer.rightsReserved">All rights reserved.</span>
-          <span>•</span>
-          <a href="config.json" target="_blank" class="footer-config-link">config.json</a>
-          <span>•</span>
-          <a href="data/i18n.json" target="_blank" class="footer-config-link">i18n.json</a>
-        </div>
       </div>
     </div>
   </footer>
 
+  <!-- High-Res Media Lightbox Modal -->
+  <div id="media-lightbox-modal" class="media-lightbox-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="lightbox-topbar">
+      <div class="lightbox-author-info">
+        <img id="lightbox-author-avatar" src="" alt="Author" class="lightbox-author-avatar" />
+        <div>
+          <div id="lightbox-author-name" class="lightbox-author-name"></div>
+          <div id="lightbox-counter" class="lightbox-counter"></div>
+        </div>
+      </div>
+      <div class="lightbox-actions">
+        <a id="lightbox-fb-link" href="#" target="_blank" rel="noopener noreferrer" class="lightbox-btn lightbox-btn-link" title="Open on Facebook">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+          </svg>
+          <span>Facebook</span>
+        </a>
+        <button id="lightbox-close-btn" type="button" class="lightbox-btn" title="Close (Esc)" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="lightbox-stage" id="lightbox-stage">
+      <button id="lightbox-prev-btn" type="button" class="lightbox-nav-btn lightbox-prev-btn" title="Previous (Left arrow)">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+
+      <div class="lightbox-content-wrap" id="lightbox-content-wrap">
+        <!-- Injected high-res image or video -->
+      </div>
+
+      <button id="lightbox-next-btn" type="button" class="lightbox-nav-btn lightbox-next-btn" title="Next (Right arrow)">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+      </button>
+    </div>
+
+    <div class="lightbox-thumbs-bar" id="lightbox-thumbs-bar"></div>
+  </div>
+
   <!-- Application Logic (loads config.json and data/i18n.json directly) -->
-  <script src="js/app.js?v=4.9"></script>
+  <script src="js/app.js?v=5.0"></script>
 </body>
 </html>
