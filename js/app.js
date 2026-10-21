@@ -229,7 +229,11 @@ function applyDynamicBindings() {
   const profiles = getConfigProfiles();
 
   document.querySelectorAll('[data-bind="site-name"]').forEach(el => {
-    el.textContent = siteName;
+    if (el.tagName === 'META') {
+      el.setAttribute('content', siteName);
+    } else {
+      el.textContent = siteName;
+    }
   });
 
   document.querySelectorAll('[data-bind="domain"]').forEach(el => {
@@ -273,7 +277,7 @@ async function loadSocialFeed() {
 
   feedContainer.innerHTML = `
     <div style="text-align: center; padding: 4rem 1rem;">
-      <div class="live-pulse" style="width: 14px; height: 14px; margin-bottom: 1rem;"></div>
+      <img src="assets/icon.webp" alt="Loading" class="feed-sync-logo" style="width: 48px; height: 48px; border-radius: 12px; margin-bottom: 1rem; box-shadow: 0 4px 14px rgba(32, 32, 112, 0.15);" />
       <p style="font-family: var(--font-cabinet); font-weight: 700; color: var(--primary-blue);">
         ${t('feed.checkingFeed', `Syncing feed for ${hashtagsStr}...`)}
       </p>
@@ -697,6 +701,9 @@ function renderFeedPosts(posts) {
 
     const isReshare = !!(post.isReshare && post.resharedPost);
     const reshared = post.resharedPost || {};
+    // For shared posts, link directly to the original post URL
+    const targetPostUrl = (isReshare && reshared.url) ? reshared.url : (post.url || '#');
+    const viewButtonLabel = isReshare ? t('feed.viewOriginal', 'View Original') : viewOnFbText;
     const reshareActionHtml = isReshare ? `
       <span class="reshare-action-badge">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -743,9 +750,17 @@ function renderFeedPosts(posts) {
       <article class="fb-post-card">
         <div class="fb-post-header">
           ${authorHeaderHtml}
-          <svg class="fb-icon-brand" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-          </svg>
+          <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-view-btn-top" title="${isReshare ? 'View original post on Facebook' : 'View on Facebook'}">
+            <svg class="fb-icon-brand-sm" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+            </svg>
+            <span>${viewButtonLabel}</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </a>
         </div>
 
         ${isReshare ? `
@@ -767,8 +782,8 @@ function renderFeedPosts(posts) {
                 </div>
                 <time class="reshared-post-date">${reshared.dateFormatted || reshared.date || ''}</time>
               </div>
-              ${reshared.url ? `
-                <a href="${reshared.url}" target="_blank" rel="noopener noreferrer" title="View original post" style="color: var(--color-text-muted); padding: 4px; display: flex; align-items: center; text-decoration: none;">
+              ${targetPostUrl ? `
+                <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" title="View original post" style="color: var(--color-text-muted); padding: 4px; display: flex; align-items: center; text-decoration: none;">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                     <polyline points="15 3 21 3 21 9"></polyline>
@@ -794,7 +809,7 @@ function renderFeedPosts(posts) {
             ` : (reshared.image || (reshared.mediaType === 'video' || (reshared.url && (reshared.url.includes('/videos/') || reshared.url.includes('/reel/'))))) ? `
               <div class="reshared-media-wrap">
                 ${(reshared.mediaType === 'video' || (reshared.url && (reshared.url.includes('/videos/') || reshared.url.includes('/reel/')))) ? `
-                  <a href="${reshared.url || post.url}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" style="position:relative; display:block;" title="Watch video on Facebook">
+                  <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" style="position:relative; display:block;" title="Watch video on Facebook">
                     <img src="${reshared.image || ''}" alt="Reshared video" class="reshared-media-image" loading="lazy" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(reshared.author || 'Video')}')" />
                     <div class="fb-video-play-overlay">
                       <div class="fb-video-play-btn">
@@ -822,7 +837,7 @@ function renderFeedPosts(posts) {
                   Your browser does not support HTML5 video.
                 </video>
               ` : `
-                <a href="${post.url}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" title="Watch video on Facebook">
+                <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-video-cover-wrap" title="Watch video on Facebook">
                   <img src="${post.image || ''}" alt="${post.author || 'Facebook Video'}" loading="lazy" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(post.author || 'Facebook Video')}')" />
                   <div class="fb-video-play-overlay">
                     <div class="fb-video-play-btn">
@@ -861,14 +876,6 @@ function renderFeedPosts(posts) {
             <span style="margin: 0 4px;">•</span>
             <span>${post.comments || 0} ${commentsText}</span>
           </div>
-          <a href="${post.url || '#'}" target="_blank" rel="noopener noreferrer" class="fb-view-link">
-            ${viewOnFbText}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <line x1="10" y1="14" x2="21" y2="3"></line>
-            </svg>
-          </a>
         </div>
       </article>
     `;

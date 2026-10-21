@@ -79,6 +79,11 @@
       "zh": "查看原帖",
       "ms": "Buka di FB"
     },
+    "viewOriginal": {
+      "en": "View Original",
+      "zh": "查看原帖",
+      "ms": "Buka Asal"
+    },
     "noPostsTitle": {
       "en": "No posts found matching the global hashtags {hashtags}.",
       "zh": "未找到匹配全局标签 {hashtags} 的动态。",
