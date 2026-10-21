@@ -1075,15 +1075,7 @@ function renderFeedPosts(posts) {
                 <img src="${s.authorAvatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico'}" alt="${s.author}" class="multi-avatar-img avatar-idx-${idx}" title="${s.author}" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
               `).join('')}
             </div>
-            <div class="multi-sharer-actions">
-              <span class="multi-share-pill">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/>
-                </svg>
-                ${t('feed.teamReshares', '{count} SHARES').replace('{count}', post.sharers.length)}
-              </span>
-              ${viewButtonHtml}
-            </div>
+            ${viewButtonHtml}
           </div>
           <div class="multi-sharer-header-main">
             <div class="fb-author-name multi-sharer-names">
@@ -1093,6 +1085,12 @@ function renderFeedPosts(posts) {
               `).join('')}
             </div>
             <div class="collab-meta-row">
+              <span class="multi-share-pill">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/>
+                </svg>
+                ${t('feed.teamReshares', '{count} SHARES').replace('{count}', post.sharers.length)}
+              </span>
               <time class="fb-post-date">${post.dateFormatted || ''}</time>
               <span class="collab-meta-dot">•</span>
               <span class="collab-joint-tag">${t('feed.sharedByCount', 'Reshared by {count} Candidates').replace('{count}', post.sharers.length)}</span>
@@ -1109,10 +1107,7 @@ function renderFeedPosts(posts) {
                 <img src="${(p.avatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico').replace(/"/g, '&quot;')}" alt="${(p.name || '').replace(/"/g, '&quot;')}" class="collab-avatar-item idx-${idx}" title="${(p.name + (p.role ? ` • ${p.role}` : '')).replace(/"/g, '&quot;')}" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
               `).join('')}
             </div>
-            <div class="collab-header-actions">
-              <span class="collab-badge-pill">${allCollabPax.length > 2 ? `COLLAB • ${allCollabPax.length} PAX` : 'COLLAB'}</span>
-              ${viewButtonHtml}
-            </div>
+            ${viewButtonHtml}
           </div>
           <div class="collab-header-main">
             <div class="fb-author-name collab-names">
@@ -1123,6 +1118,7 @@ function renderFeedPosts(posts) {
               ${reshareActionHtml}
             </div>
             <div class="collab-meta-row">
+              <span class="collab-badge-pill">${allCollabPax.length > 2 ? `COLLAB • ${allCollabPax.length} PAX` : 'COLLAB'}</span>
               <time class="fb-post-date">${post.dateFormatted || ''}</time>
               <span class="collab-meta-dot">•</span>
               <span class="collab-joint-tag">Joint Statement (${allCollabPax.length} Pax)</span>

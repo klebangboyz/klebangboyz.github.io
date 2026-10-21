@@ -970,20 +970,15 @@ button {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  gap: 0.75rem;
-}
-
-.collab-header-actions,
-.multi-sharer-actions {
-  display: flex;
-  align-items: center;
+  min-width: 0;
+  box-sizing: border-box;
   gap: 0.5rem;
-  flex-shrink: 0;
 }
 
-.collab-header-actions .fb-view-btn-top,
-.multi-sharer-actions .fb-view-btn-top {
+.collab-header-top .fb-view-btn-top,
+.multi-sharer-header-top .fb-view-btn-top {
   margin-left: 0;
+  flex-shrink: 0;
 }
 
 .collab-header-main,
@@ -2521,11 +2516,9 @@ button {
   .collab-header-top,
   .multi-sharer-header-top {
     gap: 0.4rem;
-  }
-
-  .collab-header-actions,
-  .multi-sharer-actions {
-    gap: 0.35rem;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   .collab-names,
