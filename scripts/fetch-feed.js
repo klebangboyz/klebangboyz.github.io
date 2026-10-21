@@ -508,11 +508,32 @@ async function main() {
     return d >= cutoffDate;
   };
 
-  // Full scrape processing:
+  // Canonical post key deduplication:
+  // Normalizes across different profile crawl IDs that point to the exact same Facebook post or story
   function getPostKey(p) {
-    if (p.id) return `id::${p.id}`;
-    if (p.url) return `url::${p.url.split('?')[0].replace(/\/+$/, '').toLowerCase()}`;
-    return null;
+    if (!p) return null;
+    const url = (p.url || '').split('?')[0].replace(/\/+$/, '');
+    const pfbidMatch = url.match(/(pfbid[a-zA-Z0-9]+)/i);
+    if (pfbidMatch) {
+      return `pfbid::${pfbidMatch[1]}`;
+    }
+    const videoMatch = url.match(/\/videos\/([0-9]+)/i) || url.match(/\/reel\/([0-9]+)/i);
+    if (videoMatch) {
+      return `video::${videoMatch[1]}`;
+    }
+    if (p.id) {
+      try {
+        const decoded = Buffer.from(p.id, 'base64').toString('utf8');
+        const storyMatch = decoded.match(/:\s*([0-9]{10,}):/);
+        if (storyMatch) {
+          return `story::${storyMatch[1]}`;
+        }
+      } catch (e) {}
+    }
+    if (url) {
+      return `url::${url.toLowerCase()}`;
+    }
+    return p.id ? `id::${p.id}` : null;
   }
 
   // Full scrape processing:
@@ -555,6 +576,11 @@ async function main() {
           }
         }
         if (!existing.image && p.image) existing.image = p.image;
+        // Prefer post with more recent timestamp if available
+        if (p.date && (!existing.date || new Date(p.date) > new Date(existing.date))) {
+          existing.date = p.date;
+          existing.dateFormatted = p.dateFormatted;
+        }
       } else {
         postMap.set(key, p);
       }
@@ -586,8 +612,21 @@ async function main() {
               const sSet = new Set([...(fresh.sources || []), ...p.sources]);
               fresh.sources = Array.from(sSet);
             }
-            if (Array.isArray(p.collaborators) && (!fresh.collaborators || fresh.collaborators.length === 0)) {
-              fresh.collaborators = p.collaborators;
+            if (Array.isArray(p.collaborators)) {
+              fresh.collaborators = fresh.collaborators || [];
+              for (const c of p.collaborators) {
+                if (!fresh.collaborators.some(fc => (fc.id && c.id && fc.id === c.id) || fc.name === c.name)) {
+                  fresh.collaborators.push(c);
+                }
+              }
+            }
+            if (Array.isArray(p.sharers)) {
+              fresh.sharers = fresh.sharers || [];
+              for (const s of p.sharers) {
+                if (!fresh.sharers.some(fs => (fs.sourceId && s.sourceId && fs.sourceId === s.sourceId) || fs.author === s.author)) {
+                  fresh.sharers.push(s);
+                }
+              }
             }
             if (fresh.isReshare && fresh.resharedPost) {
               if (p.resharedPost?.image && !fresh.resharedPost.image) {
@@ -937,20 +976,48 @@ function consolidateResharedPosts(posts) {
         }
         if (p.sourceId) allSources.add(p.sourceId);
 
-        let sharerName = p.rawAuthor || p.author;
-        if (sharerName.includes('Ethan Lim Zhi Hao') || p.sourceId === 'JomBersamaEthan') {
-          sharerName = 'Ethan Lim Zhi Hao';
-        }
+        // Unpack existing sharers if p was already a consolidated reshare post
+        const candidateSharers = (p.isMultiSharer && Array.isArray(p.sharers) && p.sharers.length > 0)
+          ? p.sharers
+          : [{
+              sourceId: p.sourceId,
+              author: p.rawAuthor || p.author,
+              authorAvatar: p.authorAvatar,
+              commentary: p.content || '',
+              date: p.date,
+              dateFormatted: p.dateFormatted,
+              url: p.url
+            }];
 
-        sharers.push({
-          sourceId: p.sourceId,
-          author: sharerName,
-          authorAvatar: p.authorAvatar,
-          commentary: p.content || '',
-          date: p.date,
-          dateFormatted: p.dateFormatted,
-          url: p.url
-        });
+        for (const cand of candidateSharers) {
+          let sharerName = cand.author || '';
+          if (sharerName.includes('Ethan Lim Zhi Hao') || cand.sourceId === 'JomBersamaEthan') {
+            sharerName = 'Ethan Lim Zhi Hao';
+          } else if (sharerName.includes('Dr Bryan Kek') || cand.sourceId === 'drbryankek') {
+            sharerName = 'Dr Bryan Kek';
+          }
+
+          const existingSharer = sharers.find(s =>
+            (s.sourceId && cand.sourceId && s.sourceId.toLowerCase() === cand.sourceId.toLowerCase()) ||
+            (s.author && sharerName && s.author.toLowerCase() === sharerName.toLowerCase())
+          );
+          if (existingSharer) {
+            if (!existingSharer.commentary && cand.commentary) {
+              existingSharer.commentary = cand.commentary;
+            }
+            continue;
+          }
+
+          sharers.push({
+            sourceId: cand.sourceId,
+            author: sharerName,
+            authorAvatar: cand.authorAvatar,
+            commentary: cand.commentary || cand.content || '',
+            date: cand.date,
+            dateFormatted: cand.dateFormatted,
+            url: cand.url
+          });
+        }
       }
 
       // Aggregate all unique images from all group versions and resharedPost
@@ -959,8 +1026,12 @@ function consolidateResharedPosts(posts) {
       const addImgs = (imgs) => {
         if (!Array.isArray(imgs)) return;
         for (const img of imgs) {
-          if (img && !imageSet.has(img)) {
-            imageSet.add(img);
+          if (!img || typeof img !== 'string') continue;
+          // Deduplicate by clean URL without transient query params or by photo id
+          const idMatch = img.match(/_(\d+)_\d+_n\./) || img.match(/media_id=(\d+)/);
+          const cleanKey = idMatch ? `id_${idMatch[1]}` : img.split('?')[0].toLowerCase();
+          if (!imageSet.has(cleanKey)) {
+            imageSet.add(cleanKey);
             bestImages.push(img);
           }
         }

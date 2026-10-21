@@ -314,15 +314,69 @@ async function loadSocialFeed() {
 
   let combinedPosts = [];
   let isLive = false;
+
+  function getClientPostKey(p) {
+    if (!p) return null;
+    const url = (p.url || '').split('?')[0].replace(/\/+$/, '');
+    const pfbidMatch = url.match(/(pfbid[a-zA-Z0-9]+)/i);
+    if (pfbidMatch) return `pfbid::${pfbidMatch[1]}`;
+    const videoMatch = url.match(/\/videos\/([0-9]+)/i) || url.match(/\/reel\/([0-9]+)/i);
+    if (videoMatch) return `video::${videoMatch[1]}`;
+    if (p.id) {
+      try {
+        const decoded = atob(p.id);
+        const storyMatch = decoded.match(/:\s*([0-9]{10,}):/);
+        if (storyMatch) return `story::${storyMatch[1]}`;
+      } catch (e) {}
+    }
+    if (url) return `url::${url.toLowerCase()}`;
+    return p.id ? `id::${p.id}` : null;
+  }
+
   const updateFeedUI = () => {
-    // STRICT GLOBAL HASHTAG FILTERING: Only include posts that actually contain the hashtag
+    // 1. STRICT GLOBAL HASHTAG FILTERING: Only include posts that actually contain the hashtag
     const strictlyFiltered = combinedPosts.filter(post => postMatchesHashtags(post, hashtags));
 
-    // Sort strictly newest first
-    strictlyFiltered.sort((a, b) => getPostTimestamp(b) - getPostTimestamp(a));
+    // 2. Canonical Deduplication: merge duplicate instances of same story or pfbid
+    const dedupMap = new Map();
+    for (const post of strictlyFiltered) {
+      const key = getClientPostKey(post);
+      if (!key) continue;
+      if (dedupMap.has(key)) {
+        const existing = dedupMap.get(key);
+        // Merge sources
+        const mergedSources = new Set([...(existing.sources || []), ...(post.sources || [])]);
+        if (post.sourceId) mergedSources.add(post.sourceId);
+        existing.sources = Array.from(mergedSources);
+        // Merge collaborators
+        if (Array.isArray(post.collaborators)) {
+          existing.collaborators = existing.collaborators || [];
+          for (const c of post.collaborators) {
+            if (!existing.collaborators.some(ec => (ec.id && c.id && ec.id === c.id) || ec.name === c.name)) {
+              existing.collaborators.push(c);
+            }
+          }
+        }
+        // Merge images
+        const imgSet = new Set(existing.images || []);
+        for (const img of (post.images || [])) {
+          if (img && !imgSet.has(img)) {
+            imgSet.add(img);
+            existing.images.push(img);
+          }
+        }
+        if (!existing.image && post.image) existing.image = post.image;
+        continue;
+      }
+      dedupMap.set(key, post);
+    }
+    const finalPosts = Array.from(dedupMap.values());
 
-    allFeedPosts = strictlyFiltered;
-    renderSourceFilters(profiles, strictlyFiltered);
+    // Sort strictly newest first
+    finalPosts.sort((a, b) => getPostTimestamp(b) - getPostTimestamp(a));
+
+    allFeedPosts = finalPosts;
+    renderSourceFilters(profiles, finalPosts);
     renderFeedPosts(filterPosts());
     updateFeedStatusBadge(isLive);
   };
@@ -590,15 +644,34 @@ function enrichPostWithCollabData(post, profiles) {
   // 0. If this is already a multi-sharer consolidated post, keep and enrich all sharers
   if (post.isMultiSharer && Array.isArray(post.sharers)) {
     const sourceSet = new Set(Array.isArray(post.sources) ? post.sources : []);
+    const uniqueSharers = [];
+    const seenAuthors = new Set();
     post.sharers.forEach(s => {
+      let sName = s.author || '';
+      if (sName.includes('Ethan Lim Zhi Hao') || s.sourceId === 'JomBersamaEthan') {
+        sName = 'Ethan Lim Zhi Hao';
+      } else if (sName.includes('Dr Bryan Kek') || s.sourceId === 'drbryankek') {
+        sName = 'Dr Bryan Kek';
+      }
+      const key = (s.sourceId || sName).toLowerCase();
+      if (seenAuthors.has(key)) return;
+      seenAuthors.add(key);
+
       if (s.sourceId) sourceSet.add(s.sourceId);
       const prof = profiles.find(pr => pr.id === s.sourceId);
       if (prof && (!s.authorAvatar || s.authorAvatar.includes('graph.facebook.com'))) {
         s.authorAvatar = prof.avatar || s.authorAvatar;
       }
+      uniqueSharers.push({
+        ...s,
+        author: sName
+      });
     });
     return {
       ...post,
+      author: uniqueSharers.map(s => s.author).join(' & '),
+      sharers: uniqueSharers,
+      sharesCount: uniqueSharers.length,
       sources: Array.from(sourceSet)
     };
   }
@@ -978,80 +1051,109 @@ function renderFeedPosts(posts) {
       </span>
     ` : '';
 
-    const authorHeaderHtml = isMultiSharer ? `
-      <div class="fb-author-wrap multi-sharer-author-wrap">
-        <div class="multi-avatars-cluster">
-          ${post.sharers.map((s, idx) => `
-            <img src="${s.authorAvatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico'}" alt="${s.author}" class="multi-avatar-img avatar-idx-${idx}" title="${s.author}" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
-          `).join('')}
-        </div>
-        <div>
-          <div class="fb-author-name multi-sharer-names">
-            ${post.sharers.map((s, idx) => `
-              <span class="multi-author-name-item">${s.author}</span>
-              ${idx < post.sharers.length - 1 ? `<span class="collab-cross">&</span>` : ''}
-            `).join('')}
-            <span class="multi-share-pill">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/>
-              </svg>
-              ${t('feed.teamReshares', '{count} SHARES').replace('{count}', post.sharers.length)}
-            </span>
+    const viewButtonHtml = `
+      <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-view-btn-top" title="${isReshare ? 'View original post on Facebook' : 'View on Facebook'}">
+        <svg class="fb-icon-brand-sm" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+        </svg>
+        <span>${viewButtonLabel}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="10" y1="14" x2="21" y2="3"></line>
+        </svg>
+      </a>
+    `;
+
+    let postHeaderHtml = '';
+    if (isMultiSharer) {
+      postHeaderHtml = `
+        <div class="fb-post-header multi-sharer-post-header">
+          <div class="multi-sharer-header-top">
+            <div class="multi-avatars-cluster">
+              ${post.sharers.map((s, idx) => `
+                <img src="${s.authorAvatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico'}" alt="${s.author}" class="multi-avatar-img avatar-idx-${idx}" title="${s.author}" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
+              `).join('')}
+            </div>
+            <div class="multi-sharer-actions">
+              <span class="multi-share-pill">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/>
+                </svg>
+                ${t('feed.teamReshares', '{count} SHARES').replace('{count}', post.sharers.length)}
+              </span>
+              ${viewButtonHtml}
+            </div>
           </div>
-          <time class="fb-post-date">${post.dateFormatted || ''} • ${t('feed.sharedByCount', 'Reshared by {count} Candidates').replace('{count}', post.sharers.length)}</time>
-        </div>
-      </div>
-    ` : (isCollab && allCollabPax.length > 1 ? `
-      <div class="fb-author-wrap collab-author-wrap">
-        <div class="collab-avatars-cluster count-${allCollabPax.length}" title="${allCollabPax.map(p => (p.name + (p.role ? ` (${p.role})` : '')).replace(/"/g, '&quot;')).join(' × ')}">
-          ${allCollabPax.map((p, idx) => `
-            <img src="${(p.avatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico').replace(/"/g, '&quot;')}" alt="${(p.name || '').replace(/"/g, '&quot;')}" class="collab-avatar-item idx-${idx}" title="${(p.name + (p.role ? ` • ${p.role}` : '')).replace(/"/g, '&quot;')}" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
-          `).join('')}
-        </div>
-        <div class="collab-info-wrap">
-          <div class="fb-author-name collab-names">
-            ${allCollabPax.map((p, idx) => `
-              <span class="collab-pax-name" title="${p.name}${p.role ? ` • ${p.role}` : ''}">${p.name}</span>
-              ${idx < allCollabPax.length - 1 ? `<span class="collab-cross">×</span>` : ''}
-            `).join('')}
-            <span class="collab-badge-pill">${allCollabPax.length > 2 ? `COLLAB • ${allCollabPax.length} PAX` : 'COLLAB'}</span>
-            ${reshareActionHtml}
+          <div class="multi-sharer-header-main">
+            <div class="fb-author-name multi-sharer-names">
+              ${post.sharers.map((s, idx) => `
+                <span class="multi-author-name-item">${s.author}</span>
+                ${idx < post.sharers.length - 1 ? `<span class="collab-cross">&</span>` : ''}
+              `).join('')}
+            </div>
+            <div class="collab-meta-row">
+              <time class="fb-post-date">${post.dateFormatted || ''}</time>
+              <span class="collab-meta-dot">•</span>
+              <span class="collab-joint-tag">${t('feed.sharedByCount', 'Reshared by {count} Candidates').replace('{count}', post.sharers.length)}</span>
+            </div>
           </div>
-          <time class="fb-post-date">${post.dateFormatted || ''} • Joint / Co-authored Statement (${allCollabPax.length} Pax)</time>
         </div>
-      </div>
-    ` : `
-      <div class="fb-author-wrap">
-        <img src="${authorAvatar}" alt="${post.author || 'Facebook'}" class="fb-author-avatar" loading="lazy" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
-        <div>
-          <div class="fb-author-name">
-            ${post.author || 'Facebook'}
-            <svg class="verified-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block; vertical-align: -2px;">
-              <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1.9 14.7l-4.2-4.2 1.4-1.4 2.8 2.8 6.8-6.8 1.4 1.4-8.2 8.2z"/>
-            </svg>
-            ${reshareActionHtml}
+      `;
+    } else if (isCollab && allCollabPax.length > 1) {
+      postHeaderHtml = `
+        <div class="fb-post-header collab-post-header">
+          <div class="collab-header-top">
+            <div class="collab-avatars-cluster count-${allCollabPax.length}" title="${allCollabPax.map(p => (p.name + (p.role ? ` (${p.role})` : '')).replace(/"/g, '&quot;')).join(' × ')}">
+              ${allCollabPax.map((p, idx) => `
+                <img src="${(p.avatar || 'https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico').replace(/"/g, '&quot;')}" alt="${(p.name || '').replace(/"/g, '&quot;')}" class="collab-avatar-item idx-${idx}" title="${(p.name + (p.role ? ` • ${p.role}` : '')).replace(/"/g, '&quot;')}" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
+              `).join('')}
+            </div>
+            <div class="collab-header-actions">
+              <span class="collab-badge-pill">${allCollabPax.length > 2 ? `COLLAB • ${allCollabPax.length} PAX` : 'COLLAB'}</span>
+              ${viewButtonHtml}
+            </div>
           </div>
-          <time class="fb-post-date">${post.dateFormatted || ''}</time>
+          <div class="collab-header-main">
+            <div class="fb-author-name collab-names">
+              ${allCollabPax.map((p, idx) => `
+                <span class="collab-pax-name" title="${(p.name + (p.role ? ` • ${p.role}` : '')).replace(/"/g, '&quot;')}">${p.name}</span>
+                ${idx < allCollabPax.length - 1 ? `<span class="collab-cross">×</span>` : ''}
+              `).join('')}
+              ${reshareActionHtml}
+            </div>
+            <div class="collab-meta-row">
+              <time class="fb-post-date">${post.dateFormatted || ''}</time>
+              <span class="collab-meta-dot">•</span>
+              <span class="collab-joint-tag">Joint Statement (${allCollabPax.length} Pax)</span>
+            </div>
+          </div>
         </div>
-      </div>
-    `);
+      `;
+    } else {
+      postHeaderHtml = `
+        <div class="fb-post-header">
+          <div class="fb-author-wrap">
+            <img src="${authorAvatar}" alt="${post.author || 'Facebook'}" class="fb-author-avatar" loading="lazy" onerror="this.onerror=null;this.src='https://static.xx.fbcdn.net/rsrc.php/y1/r/ay1hV6OlegS.ico';" />
+            <div>
+              <div class="fb-author-name">
+                ${post.author || 'Facebook'}
+                <svg class="verified-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="display:inline-block; vertical-align: -2px;">
+                  <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1.9 14.7l-4.2-4.2 1.4-1.4 2.8 2.8 6.8-6.8 1.4 1.4-8.2 8.2z"/>
+                </svg>
+                ${reshareActionHtml}
+              </div>
+              <time class="fb-post-date">${post.dateFormatted || ''}</time>
+            </div>
+          </div>
+          ${viewButtonHtml}
+        </div>
+      `;
+    }
 
     return `
       <article class="fb-post-card">
-        <div class="fb-post-header">
-          ${authorHeaderHtml}
-          <a href="${targetPostUrl}" target="_blank" rel="noopener noreferrer" class="fb-view-btn-top" title="${isReshare ? 'View original post on Facebook' : 'View on Facebook'}">
-            <svg class="fb-icon-brand-sm" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-            </svg>
-            <span>${viewButtonLabel}</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <line x1="10" y1="14" x2="21" y2="3"></line>
-            </svg>
-          </a>
-        </div>
+        ${postHeaderHtml}
 
         ${isReshare ? `
           ${isMultiSharer ? `

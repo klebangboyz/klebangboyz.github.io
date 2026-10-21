@@ -953,15 +953,49 @@ button {
   border: 2px solid var(--primary-yellow);
 }
 
-.collab-author-wrap {
+/* Unified 2-Row Header for Collab and Multi-Sharer Posts */
+.collab-post-header,
+.multi-sharer-post-header {
   display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  flex: 1;
-  min-width: 0;
+  flex-direction: column;
+  padding: 1.15rem 1.35rem 0.85rem;
+  gap: 0.75rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.collab-avatars-cluster {
+.collab-header-top,
+.multi-sharer-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.75rem;
+}
+
+.collab-header-actions,
+.multi-sharer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.collab-header-actions .fb-view-btn-top,
+.multi-sharer-actions .fb-view-btn-top {
+  margin-left: 0;
+}
+
+.collab-header-main,
+.multi-sharer-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.collab-avatars-cluster,
+.multi-avatars-cluster {
   display: inline-flex;
   align-items: center;
   position: relative;
@@ -969,7 +1003,8 @@ button {
   padding-left: 2px;
 }
 
-.collab-avatar-item {
+.collab-avatar-item,
+.multi-avatar-img {
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -990,45 +1025,46 @@ button {
   margin-left: -12px;
 }
 
-.collab-avatar-item:first-child {
+.collab-avatar-item:first-child,
+.multi-avatar-img:first-child {
   margin-left: 0;
   border-color: var(--primary-yellow);
   z-index: 10;
 }
 
-.collab-avatar-item.idx-1 { z-index: 9; }
-.collab-avatar-item.idx-2 { z-index: 8; }
-.collab-avatar-item.idx-3 { z-index: 7; }
-.collab-avatar-item.idx-4 { z-index: 6; }
-.collab-avatar-item.idx-5 { z-index: 5; }
-.collab-avatar-item.idx-6 { z-index: 4; }
+.collab-avatar-item.idx-1, .multi-avatar-img.avatar-idx-1 { z-index: 9; }
+.collab-avatar-item.idx-2, .multi-avatar-img.avatar-idx-2 { z-index: 8; }
+.collab-avatar-item.idx-3, .multi-avatar-img.avatar-idx-3 { z-index: 7; }
+.collab-avatar-item.idx-4, .multi-avatar-img.avatar-idx-4 { z-index: 6; }
+.collab-avatar-item.idx-5, .multi-avatar-img.avatar-idx-5 { z-index: 5; }
+.collab-avatar-item.idx-6, .multi-avatar-img.avatar-idx-6 { z-index: 4; }
 
-.collab-avatar-item:hover {
+.collab-avatar-item:hover,
+.multi-avatar-img:hover {
   transform: translateY(-4px) scale(1.22);
   z-index: 25 !important;
   box-shadow: 0 6px 14px rgba(32, 32, 112, 0.25);
   border-color: var(--primary-blue);
 }
 
-.collab-info-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-.collab-names {
+.collab-names,
+.multi-sharer-names {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.25rem 0.4rem;
   line-height: 1.35;
+  font-family: var(--font-cabinet);
+  font-weight: 800;
+  font-size: 1rem;
 }
 
-.collab-pax-name {
+.collab-pax-name,
+.multi-author-name-item {
   color: var(--primary-blue);
   font-weight: 800;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .collab-cross {
@@ -1039,7 +1075,8 @@ button {
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.08));
 }
 
-.collab-badge-pill {
+.collab-badge-pill,
+.multi-share-pill {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -1047,11 +1084,32 @@ button {
   color: var(--primary-blue);
   font-size: 0.68rem;
   font-weight: 800;
-  padding: 0.15rem 0.55rem;
+  padding: 0.18rem 0.55rem;
   border-radius: 9999px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  white-space: nowrap;
+}
+
+.collab-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  line-height: 1.4;
+}
+
+.collab-meta-dot {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.collab-joint-tag {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -2454,14 +2512,52 @@ button {
     word-break: break-word;
   }
 
-  .collab-names {
-    font-size: 0.85rem;
+  .collab-post-header,
+  .multi-sharer-post-header {
+    padding: 0.85rem 0.85rem 0.65rem;
+    gap: 0.6rem;
   }
 
-  .collab-avatars-cluster .primary-avatar,
-  .collab-avatars-cluster .collab-avatar {
+  .collab-header-top,
+  .multi-sharer-header-top {
+    gap: 0.4rem;
+  }
+
+  .collab-header-actions,
+  .multi-sharer-actions {
+    gap: 0.35rem;
+  }
+
+  .collab-names,
+  .multi-sharer-names {
+    font-size: 0.88rem;
+    line-height: 1.35;
+    gap: 0.2rem 0.35rem;
+  }
+
+  .collab-pax-name,
+  .multi-author-name-item {
+    font-size: 0.88rem;
+    white-space: nowrap;
+  }
+
+  .collab-avatars-cluster .collab-avatar-item,
+  .multi-avatars-cluster .multi-avatar-img {
+    width: 34px;
+    height: 34px;
+    margin-left: -11px;
+  }
+
+  .collab-avatars-cluster.count-5 .collab-avatar-item,
+  .collab-avatars-cluster.count-6 .collab-avatar-item {
     width: 32px;
     height: 32px;
+    margin-left: -10px;
+  }
+
+  .collab-joint-tag {
+    font-size: 0.72rem;
+    white-space: nowrap;
   }
 
   .fb-post-date {
