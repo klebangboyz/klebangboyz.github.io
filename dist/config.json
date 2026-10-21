@@ -1,0 +1,24 @@
+{
+  "siteName": "Suara Bersama (Edisi Klebang Boyz)",
+  "profiles": [
+    {
+      "name": "Dr Bryan Kek",
+      "url": "https://www.facebook.com/drbryankek"
+    },
+    {
+      "name": "Jom Bersama Ethan",
+      "url": "https://www.facebook.com/JomBersamaEthan"
+    },
+    {
+      "name": "Young Jie Yu",
+      "url": "https://www.facebook.com/bersama.jieyu"
+    },
+    {
+      "name": "Bersamagohan",
+      "url": "https://www.facebook.com/Bersamagohan"
+    }
+  ],
+  "hashtags": [
+    "#sb"
+  ]
+}

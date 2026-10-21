@@ -1,0 +1,24 @@
+{
+  "name": "klebang.boyz.space",
+  "version": "1.0.0",
+  "description": "Suara Bersama (Edisi Klebang Boyz) - Community update hub and social RSS ingestion",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx -y live-server --port=3000 --watch=. --open",
+    "serve": "npx -y serve .",
+    "build": "node scripts/build.js",
+    "preview": "npx -y serve dist",
+    "fetch-feed": "node scripts/fetch-feed.js"
+  },
+  "keywords": [
+    "klebang",
+    "kesidang",
+    "tetapkesidang",
+    "facebook-feed"
+  ],
+  "author": "Dr Bryan Kek & Klebang Boyz",
+  "license": "MIT",
+  "dependencies": {
+    "sharp": "^0.35.5"
+  }
+}

@@ -1,0 +1,140 @@
+{
+  "nav": {
+    "feed": {
+      "en": "Feed",
+      "zh": "动态",
+      "ms": "Suapan"
+    },
+    "facebook": {
+      "en": "Channels",
+      "zh": "媒体主页",
+      "ms": "Saluran"
+    }
+  },
+  "hero": {
+    "badgeOfficial": {
+      "en": "Aggregated Social Feed",
+      "zh": "多媒体聚合动态",
+      "ms": "Suapan Media Agregat"
+    },
+    "badgeRss": {
+      "en": "RSS Live Sync",
+      "zh": "RSS 实时同步",
+      "ms": "Penyegerakan RSS"
+    },
+    "subtag": {
+      "en": "Live Community & Media Stream",
+      "zh": "实时社区与媒体动态",
+      "ms": "Suapan Langsung Komuniti & Media"
+    },
+    "lead": {
+      "en": "Aggregated stream from multiple channels, strictly filtered for global hashtags: {hashtags}.",
+      "zh": "聚合多个媒体渠道的动态，严格依据全局标签筛选：{hashtags}。",
+      "ms": "Suapan agregat dari pelbagai saluran, ditapis khusus untuk hashtag global: {hashtags}."
+    }
+  },
+  "feed": {
+    "latestPosts": {
+      "en": "Latest Updates",
+      "zh": "最新动态",
+      "ms": "Hantaran Terkini"
+    },
+    "allSources": {
+      "en": "All Channels",
+      "zh": "全部渠道",
+      "ms": "Semua Saluran"
+    },
+    "filterBy": {
+      "en": "Filter:",
+      "zh": "筛选渠道:",
+      "ms": "Saluran:"
+    },
+    "allTags": {
+      "en": "All Tags",
+      "zh": "全部标签",
+      "ms": "Semua Hashtag"
+    },
+    "filteringIndicator": {
+      "en": "Filtering posts with global hashtags:",
+      "zh": "依据全局标签筛选：",
+      "ms": "Menapis hantaran dengan hashtag global:"
+    },
+    "pullingFrom": {
+      "en": "Pulling from:",
+      "zh": "抓取主页：",
+      "ms": "Dipetik daripada:"
+    },
+    "matchingTags": {
+      "en": "Filtered by:",
+      "zh": "筛选标签：",
+      "ms": "Ditapis mengikut:"
+    },
+    "searchPlaceholder": {
+      "en": "Search in posts...",
+      "zh": "搜索动态内容...",
+      "ms": "Cari dalam hantaran..."
+    },
+    "refreshBtn": {
+      "en": "Refresh",
+      "zh": "刷新",
+      "ms": "Segarkan"
+    },
+    "viewOnFacebook": {
+      "en": "View on FB",
+      "zh": "查看原帖",
+      "ms": "Buka di FB"
+    },
+    "viewOriginal": {
+      "en": "View Original",
+      "zh": "查看原帖",
+      "ms": "Buka Asal"
+    },
+    "noPostsTitle": {
+      "en": "No posts found matching the global hashtags {hashtags}.",
+      "zh": "未找到匹配全局标签 {hashtags} 的动态。",
+      "ms": "Tiada hantaran ditemui yang sepadan dengan hashtag global {hashtags}."
+    },
+    "noPostsHint": {
+      "en": "Ensure new posts on the configured channels include these hashtags to appear automatically.",
+      "zh": "请确保所选渠道的新帖子带有以上标签即可自动同步显示。",
+      "ms": "Pastikan hantaran di saluran berkaitan mengandungi hashtag ini untuk disiarkan secara automatik."
+    },
+    "checkingFeed": {
+      "en": "Syncing multi-channel feed for hashtags {hashtags}...",
+      "zh": "正在同步多渠道动态 ({hashtags})...",
+      "ms": "Menyemak suapan pelbagai saluran untuk hashtag {hashtags}..."
+    },
+    "liveBadge": {
+      "en": "Live RSS",
+      "zh": "实时 RSS",
+      "ms": "Live RSS"
+    },
+    "verifiedBadge": {
+      "en": "Verified",
+      "zh": "已核验",
+      "ms": "Disahkan"
+    },
+    "comments": {
+      "en": "comments",
+      "zh": "评论",
+      "ms": "komen"
+    }
+  },
+  "footer": {
+    "sourceNotice": {
+      "en": "Multi-channel Facebook feed • Filtered strictly for {hashtags}",
+      "zh": "多渠道 Facebook 动态 • 严格基于 {hashtags} 全局标签筛选",
+      "ms": "Suapan Facebook pelbagai saluran • Ditapis khusus untuk {hashtags}"
+    },
+    "domainLabel": {
+      "en": "Domain:",
+      "zh": "域名：",
+      "ms": "Domain:"
+    },
+    "rightsReserved": {
+      "en": "All rights reserved.",
+      "zh": "版权所有。",
+      "ms": "Hak cipta terpelihara."
+    }
+  }
+}
