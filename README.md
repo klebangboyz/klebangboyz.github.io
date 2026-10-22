@@ -99,9 +99,8 @@ You can edit site settings, hashtags, channels, or profile names directly in you
 3. Update any field (e.g. modify `"hashtags"`, change `"siteName"`, or add/remove channels in `"profiles"`).
 4. Click **Commit changes** to `main`.
 5. The automated GitHub Actions workflows take over immediately:
-   - **[`update-feed.yml`](.github/workflows/update-feed.yml)** triggers on `config.json` changes: it runs `scripts/fetch-feed.js` to ingest & filter posts strictly by your new hashtags, rebuilds `dist/`, and commits.
-   - **[`deploy.yml`](.github/workflows/deploy.yml)** deploys `dist/` directly to `klebang.boyz.space` in ~25 seconds.
-   - The workflow also runs on a recurring schedule **every 2 hours** to pull fresh posts automatically.
+   - **[`update-feed.yml`](.github/workflows/update-feed.yml)** triggers whenever called externally (via GitHub API `workflow_dispatch` / `repository_dispatch`) or on `config.json` changes. It ingests & filters posts, updates `dist/`, commits any changes, and immediately redeploys the site to GitHub Pages.
+   - **[`deploy.yml`](.github/workflows/deploy.yml)** provides direct deployment on code pushes to `main` / `master` or manual trigger.
 6. The client app uses cache-busting headers (`config.json?v=<timestamp>` with `no-store`), ensuring visitors immediately receive the updated config on their next visit or by clicking the **Refresh** button!
 
 ---
