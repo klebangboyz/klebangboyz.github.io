@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const crypto = require('crypto');
 
 const configPath = path.join(__dirname, '..', 'config.json');
 const outputPath = path.join(__dirname, '..', 'data', 'feed.json');
@@ -92,6 +93,45 @@ function fetchUrl(url, maxRedirects = 5, customUserAgent = 'Mozilla/5.0 (compati
   });
 }
 
+function downloadImageToFile(url, destPath) {
+  return new Promise((resolve) => {
+    if (!url || !destPath) return resolve(false);
+    if (fs.existsSync(destPath) && fs.statSync(destPath).size > 1000) {
+      return resolve(true);
+    }
+    const client = url.startsWith('https') ? https : http;
+    const req = client.get(url, { headers: { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        let redirectUrl = res.headers.location;
+        if (!redirectUrl.startsWith('http')) {
+          redirectUrl = new URL(redirectUrl, url).href;
+        }
+        return downloadImageToFile(redirectUrl, destPath).then(resolve);
+      }
+      if (res.statusCode !== 200) {
+        return resolve(false);
+      }
+      const dir = path.dirname(destPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const fileStream = fs.createWriteStream(destPath);
+      res.pipe(fileStream);
+      fileStream.on('finish', () => {
+        fileStream.close();
+        resolve(fs.existsSync(destPath) && fs.statSync(destPath).size > 1000);
+      });
+      fileStream.on('error', () => {
+        try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (e) {}
+        resolve(false);
+      });
+    });
+    req.on('error', () => resolve(false));
+    req.setTimeout(12000, () => {
+      try { req.abort(); } catch (e) {}
+      resolve(false);
+    });
+  });
+}
+
 function extractResolutionScore(url) {
   if (
     url.includes('t39.1997-') ||
@@ -132,22 +172,55 @@ async function fetchPostMedia(permalink) {
   if (!permalink) return { images: [], videoUrl: '', videoClip: '', isVideo: false };
 
   const isVideo = permalink.includes('/videos/') || permalink.includes('/reel/');
+  const vidMatch = permalink.match(/(?:videos|reel)\/([0-9]+)/i);
+  const vidId = vidMatch ? vidMatch[1] : '';
+
+  // Check if local video poster already exists and is non-empty
+  if (isVideo && vidId) {
+    const localRel = `data/images/poster_${vidId}.jpg`;
+    const localAbs = path.resolve(__dirname, '..', localRel);
+    if (fs.existsSync(localAbs) && fs.statSync(localAbs).size > 1000) {
+      return {
+        images: [localRel],
+        videoUrl: `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(permalink)}&show_text=0&autoplay=0`,
+        videoClip: '',
+        isVideo: true
+      };
+    }
+  }
+
   const pluginUrl = isVideo
     ? `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(permalink)}&show_text=0&autoplay=0`
     : `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(permalink)}&show_text=1`;
 
   try {
-    const htmlPlugin = await fetchUrl(pluginUrl, 3, 'curl/8.0.0');
-    let htmlRaw = '';
-    if (!isVideo) {
-      htmlRaw = await fetchUrl(permalink, 5, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+    // 1. Fetch with facebookexternalhit to get og:image and rich metadata
+    let htmlRaw = await fetchUrl(permalink, 5, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+    if (isVideo && vidId && (!htmlRaw || !htmlRaw.includes('og:image'))) {
+      const reelUrl = `https://www.facebook.com/reel/${vidId}/`;
+      const reelHtml = await fetchUrl(reelUrl, 5, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+      if (reelHtml && reelHtml.includes('og:image')) {
+        htmlRaw = (htmlRaw || '') + ' ' + reelHtml;
+      }
     }
 
+    const htmlPlugin = await fetchUrl(pluginUrl, 3, 'curl/8.0.0');
     const combined = (htmlRaw || '') + ' ' + (htmlPlugin || '');
-    const jsonRegex = /https:[\\\/A-Za-z0-9_.\-%?=&;]+scontent[\\\/A-Za-z0-9_.\-%?=&;]+/gi;
-    const matches = combined.match(jsonRegex) || [];
 
     const photoMap = new Map();
+
+    // Check OpenGraph og:image first (best single media / video thumbnail)
+    const ogMatch = combined.match(/<meta\b[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+                    combined.match(/<meta\b[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+    if (ogMatch) {
+      const ogUrl = ogMatch[1].replace(/&amp;/g, '&');
+      if (ogUrl.includes('fbcdn.net') && !ogUrl.includes('static.xx')) {
+        photoMap.set('og_image', { url: ogUrl, score: 99999999 });
+      }
+    }
+
+    const jsonRegex = /https:[\\\/A-Za-z0-9_.\-%?=&;]+scontent[\\\/A-Za-z0-9_.\-%?=&;]+/gi;
+    const matches = combined.match(jsonRegex) || [];
 
     for (let m of matches) {
       m = m.replace(/\\u002526/g, '&').replace(/\\u00253D/g, '=').replace(/\\u00252F/g, '/').replace(/\\\//g, '/').replace(/&amp;/g, '&');
@@ -176,7 +249,22 @@ async function fetchPostMedia(permalink) {
       }
     }
 
-    const images = Array.from(photoMap.values()).map(x => x.url);
+    let images = Array.from(photoMap.values()).map(x => x.url);
+
+    // If it's a video and we found a remote thumbnail, download it locally to ensure it NEVER expires
+    if (isVideo && vidId && images.length > 0) {
+      const localRel = `data/images/poster_${vidId}.jpg`;
+      const localAbs = path.resolve(__dirname, '..', localRel);
+      try {
+        const downloaded = await downloadImageToFile(images[0], localAbs);
+        if (downloaded) {
+          console.log(`-> Cached permanent video poster: ${localRel}`);
+          images = [localRel];
+        }
+      } catch (err) {
+        console.warn(`Could not cache poster for ${vidId}:`, err.message);
+      }
+    }
 
     let videoClip = '';
     const videoMatch = combined.match(/<video[^>]+src=["']([^"']+)["']/i) || combined.match(/"playable_url(?:_quality_hd)?":\s*"([^"]+)"/i);
@@ -469,6 +557,71 @@ function parseFacebookHtml(html, pageId, globalHashtags = []) {
   return posts;
 }
 
+function getReshareKey(p) {
+  if (!p || (!p.isReshare && !p.resharedPost && (!p.id || !p.id.startsWith('multi_reshare_')))) return null;
+  const reshare = p.resharedPost || {};
+  const author = (reshare.author || '').trim().toLowerCase();
+  const textSample = (reshare.content || p.content || '').replace(/#[\w\u0080-\uffff]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 80).toLowerCase();
+  if (author && textSample) {
+    return `reshare::${author}::${textSample}`;
+  }
+  const u = (reshare.url || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
+  if (u) return `reshare::${u}`;
+  return null;
+}
+
+// Canonical post key deduplication:
+// Normalizes across different profile crawl IDs, transient pfbid slugs, and multi-profile reshares
+function getPostKey(p) {
+  if (!p) return null;
+
+  // 1. Reshare canonical target
+  const rKey = getReshareKey(p);
+  if (rKey) return rKey;
+
+  // 2. Video or reel numeric ID (e.g. /videos/123/ or /reel/123/)
+  const url = (p.url || '').split('?')[0].replace(/\/+$/, '');
+  const vidMatch = url.match(/(?:videos|reel)\/([0-9]+)/i);
+  if (vidMatch) {
+    return `video::${vidMatch[1]}`;
+  }
+
+  // 3. Canonical Story ID from base64 GraphQL ID (immutable across crawls & pfbid aliases)
+  if (p.id && !p.id.startsWith('multi_reshare_')) {
+    try {
+      const decoded = Buffer.from(p.id, 'base64').toString('utf8');
+      const storyMatch = decoded.match(/:\s*([0-9]{10,}):/);
+      if (storyMatch) {
+        return `story::${storyMatch[1]}`;
+      }
+    } catch (e) {}
+  }
+
+  // 4. story_fbid or fbid query parameter in URL
+  const fullUrl = p.url || '';
+  const fbidMatch = fullUrl.match(/[?&](?:story_fbid|fbid)=([0-9]+)/i);
+  if (fbidMatch) {
+    return `story::${fbidMatch[1]}`;
+  }
+
+  // 5. Normalized substantial content + author fingerprint (detects edits & multi-shares)
+  const cleanContent = (p.content || '').replace(/#[\w\u0080-\uffff]+/g, '').replace(/\s+/g, ' ').trim();
+  if (cleanContent.length >= 20) {
+    const authorNorm = (p.rawAuthor || p.author || '').toLowerCase().trim();
+    return `content::${authorNorm}::${cleanContent.slice(0, 80).toLowerCase()}`;
+  }
+
+  // 6. pfbid in URL as fallback when no canonical story ID is present
+  const pfbidMatch = url.match(/(pfbid[a-zA-Z0-9]+)/i);
+  if (pfbidMatch) {
+    return `pfbid::${pfbidMatch[1]}`;
+  }
+
+  if (p.id) return `id::${p.id}`;
+  if (url) return `url::${url.toLowerCase()}`;
+  return null;
+}
+
 async function main() {
   if (!fs.existsSync(configPath)) {
     console.error('config.json not found');
@@ -507,34 +660,6 @@ async function main() {
     if (isNaN(d.getTime())) return true;
     return d >= cutoffDate;
   };
-
-  // Canonical post key deduplication:
-  // Normalizes across different profile crawl IDs that point to the exact same Facebook post or story
-  function getPostKey(p) {
-    if (!p) return null;
-    const url = (p.url || '').split('?')[0].replace(/\/+$/, '');
-    const pfbidMatch = url.match(/(pfbid[a-zA-Z0-9]+)/i);
-    if (pfbidMatch) {
-      return `pfbid::${pfbidMatch[1]}`;
-    }
-    const videoMatch = url.match(/\/videos\/([0-9]+)/i) || url.match(/\/reel\/([0-9]+)/i);
-    if (videoMatch) {
-      return `video::${videoMatch[1]}`;
-    }
-    if (p.id) {
-      try {
-        const decoded = Buffer.from(p.id, 'base64').toString('utf8');
-        const storyMatch = decoded.match(/:\s*([0-9]{10,}):/);
-        if (storyMatch) {
-          return `story::${storyMatch[1]}`;
-        }
-      } catch (e) {}
-    }
-    if (url) {
-      return `url::${url.toLowerCase()}`;
-    }
-    return p.id ? `id::${p.id}` : null;
-  }
 
   // Full scrape processing:
   // 1. Freshly scraped posts from live pages take precedence (reflects changed/edited posts and current media)
@@ -719,16 +844,58 @@ async function main() {
       post.image = (post.images && post.images[0]) || '';
     }
 
-    // Check local video poster for video posts
-    if (post.mediaType === 'video' && (!post.image || !post.images || post.images.length === 0)) {
-      const vidMatch = (post.url || '').match(/(?:videos|reel)\/(\d+)/);
+    // Ensure all video posts have a permanent local poster
+    if (post.mediaType === 'video' || (post.url && (post.url.includes('/videos/') || post.url.includes('/reel/')))) {
+      post.mediaType = 'video';
+      const vidMatch = (post.url || '').match(/(?:videos|reel)\/([0-9]+)/i);
       if (vidMatch) {
-        const localRel = `data/images/poster_${vidMatch[1]}.jpg`;
+        const vidId = vidMatch[1];
+        const localRel = `data/images/poster_${vidId}.jpg`;
         const localAbs = path.resolve(__dirname, '..', localRel);
-        if (fs.existsSync(localAbs)) {
+
+        // 1. If local poster already exists on disk, always prefer it
+        if (fs.existsSync(localAbs) && fs.statSync(localAbs).size > 1000) {
           post.image = localRel;
           post.images = [localRel];
-          console.log(`-> Assigned local video poster for ${post.url}: ${localRel}`);
+        } else if (post.image && post.image.startsWith('http')) {
+          // 2. If we have a remote CDN thumbnail, download and cache it locally
+          try {
+            console.log(`-> Downloading video thumbnail to local poster: ${localRel}...`);
+            const ok = await downloadImageToFile(post.image, localAbs);
+            if (ok) {
+              post.image = localRel;
+              post.images = [localRel];
+              console.log(`-> Saved video poster: ${localRel}`);
+            }
+          } catch (e) {
+            console.warn(`Could not save poster for ${vidId}:`, e.message);
+          }
+        } else {
+          // 3. If no image at all, generate a branded SVG poster file so it is NEVER missing!
+          try {
+            const svgRel = `data/images/poster_${vidId}.svg`;
+            const svgAbs = path.resolve(__dirname, '..', svgRel);
+            if (!fs.existsSync(svgAbs)) {
+              const authorSafe = (post.author || 'Facebook Video').replace(/[<>&'"]/g, '');
+              const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#202070"/>
+      <stop offset="100%" stop-color="#0f0f35"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#g)"/>
+  <circle cx="320" cy="155" r="38" fill="#EEBD00"/>
+  <polygon points="314,142 334,155 314,168" fill="#202070"/>
+  <text x="320" y="230" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-weight="bold" font-size="16">${authorSafe}</text>
+  <text x="320" y="255" text-anchor="middle" fill="#EEBD00" font-family="system-ui, -apple-system, sans-serif" font-weight="600" font-size="12">Watch Video on Facebook</text>
+</svg>`;
+              fs.writeFileSync(svgAbs, svgContent, 'utf8');
+            }
+            post.image = svgRel;
+            post.images = [svgRel];
+            console.log(`-> Generated fallback SVG poster: ${svgRel}`);
+          } catch (e) {}
         }
       }
     }
@@ -942,10 +1109,16 @@ function consolidateResharedPosts(posts) {
   const reshareGroups = new Map();
 
   function getReshareKey(p) {
-    if (!p.isReshare || !p.resharedPost) return null;
-    const u = (p.resharedPost.url || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
-    if (u) return u;
-    return (p.resharedPost.author || '').trim().toLowerCase() + '::' + (p.resharedPost.content || '').slice(0, 100);
+    if (!p || (!p.isReshare && !p.resharedPost && (!p.id || !p.id.startsWith('multi_reshare_')))) return null;
+    const reshare = p.resharedPost || {};
+    const author = (reshare.author || '').trim().toLowerCase();
+    const textSample = (reshare.content || p.content || '').replace(/#[\w\u0080-\uffff]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 80).toLowerCase();
+    if (author && textSample) {
+      return `reshare::${author}::${textSample}`;
+    }
+    const u = (reshare.url || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
+    if (u) return `reshare::${u}`;
+    return null;
   }
 
   for (const post of posts) {
@@ -1045,10 +1218,11 @@ function consolidateResharedPosts(posts) {
       }
 
       const namesCombined = sharers.map(s => s.author).join(' & ');
+      const reshareHash = crypto.createHash('md5').update(rKey).digest('hex').slice(0, 16);
 
       const consolidated = {
         ...primary,
-        id: `multi_reshare_${Buffer.from(rKey).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)}`,
+        id: `multi_reshare_${reshareHash}`,
         author: namesCombined,
         isMultiSharer: true,
         sharesCount: sharers.length,
@@ -1068,8 +1242,35 @@ function consolidateResharedPosts(posts) {
     }
   }
 
-  result.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-  return result;
+  // Final safety deduplication pass ensuring ZERO duplicates ever leave the pipeline
+  const dedupFinal = new Map();
+  for (const post of result) {
+    const k = getPostKey(post);
+    if (!k) {
+      dedupFinal.set(post.id || Math.random().toString(), post);
+      continue;
+    }
+    if (dedupFinal.has(k)) {
+      const existing = dedupFinal.get(k);
+      const sSet = new Set([...(existing.sources || []), ...(post.sources || [])]);
+      if (post.sourceId) sSet.add(post.sourceId);
+      existing.sources = Array.from(sSet);
+      const imgSet = new Set(existing.images || []);
+      for (const img of (post.images || [])) {
+        if (img && !imgSet.has(img)) {
+          imgSet.add(img);
+          existing.images.push(img);
+        }
+      }
+      if (!existing.image && post.image) existing.image = post.image;
+      continue;
+    }
+    dedupFinal.set(k, post);
+  }
+
+  const finalCleaned = Array.from(dedupFinal.values());
+  finalCleaned.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  return finalCleaned;
 }
 
 main().catch(err => {

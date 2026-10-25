@@ -315,22 +315,59 @@ async function loadSocialFeed() {
   let combinedPosts = [];
   let isLive = false;
 
+  function getClientReshareKey(p) {
+    if (!p || (!p.isReshare && !p.resharedPost && (!p.id || !p.id.startsWith('multi_reshare_')))) return null;
+    const reshare = p.resharedPost || {};
+    const author = (reshare.author || '').trim().toLowerCase();
+    const textSample = (reshare.content || p.content || '').replace(/#[\w\u0080-\uffff]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 80).toLowerCase();
+    if (author && textSample) {
+      return `reshare::${author}::${textSample}`;
+    }
+    const u = (reshare.url || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
+    if (u) return `reshare::${u}`;
+    return null;
+  }
+
   function getClientPostKey(p) {
     if (!p) return null;
+
+    // 1. Reshare canonical target
+    const rKey = getClientReshareKey(p);
+    if (rKey) return rKey;
+
+    // 2. Video or reel numeric ID
     const url = (p.url || '').split('?')[0].replace(/\/+$/, '');
-    const pfbidMatch = url.match(/(pfbid[a-zA-Z0-9]+)/i);
-    if (pfbidMatch) return `pfbid::${pfbidMatch[1]}`;
-    const videoMatch = url.match(/\/videos\/([0-9]+)/i) || url.match(/\/reel\/([0-9]+)/i);
-    if (videoMatch) return `video::${videoMatch[1]}`;
-    if (p.id) {
+    const vidMatch = url.match(/(?:videos|reel)\/([0-9]+)/i);
+    if (vidMatch) return `video::${vidMatch[1]}`;
+
+    // 3. Canonical Story ID from base64 GraphQL ID
+    if (p.id && !p.id.startsWith('multi_reshare_')) {
       try {
         const decoded = atob(p.id);
         const storyMatch = decoded.match(/:\s*([0-9]{10,}):/);
         if (storyMatch) return `story::${storyMatch[1]}`;
       } catch (e) {}
     }
+
+    // 4. story_fbid or fbid query parameter in URL
+    const fullUrl = p.url || '';
+    const fbidMatch = fullUrl.match(/[?&](?:story_fbid|fbid)=([0-9]+)/i);
+    if (fbidMatch) return `story::${fbidMatch[1]}`;
+
+    // 5. Normalized substantial content + author fingerprint
+    const cleanContent = (p.content || '').replace(/#[\w\u0080-\uffff]+/g, '').replace(/\s+/g, ' ').trim();
+    if (cleanContent.length >= 20) {
+      const authorNorm = (p.rawAuthor || p.author || '').toLowerCase().trim();
+      return `content::${authorNorm}::${cleanContent.slice(0, 80).toLowerCase()}`;
+    }
+
+    // 6. pfbid in URL
+    const pfbidMatch = url.match(/(pfbid[a-zA-Z0-9]+)/i);
+    if (pfbidMatch) return `pfbid::${pfbidMatch[1]}`;
+
+    if (p.id) return `id::${p.id}`;
     if (url) return `url::${url.toLowerCase()}`;
-    return p.id ? `id::${p.id}` : null;
+    return null;
   }
 
   const updateFeedUI = () => {
@@ -1242,7 +1279,7 @@ function renderFeedPosts(posts) {
                 return `
                   <div class="reshared-media-wrap" onclick="window.openMediaLightbox('${encodeURIComponent(post.id || post.url)}', 0)" style="cursor: pointer;">
                     <div class="fb-video-cover-wrap" style="position:relative; display:block;" title="Click to view video">
-                      <img src="${reshareThumb}" alt="Reshared video" class="reshared-media-image" loading="lazy" referrerpolicy="no-referrer" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(reshared.author || 'Video')}')" />
+                      <img src="${reshareThumb}" alt="Reshared video" class="reshared-media-image" loading="lazy" referrerpolicy="no-referrer" data-vid="${reshareVidMatch ? reshareVidMatch[1] : ''}" data-author="${encodeURIComponent(reshared.author || 'Video')}" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(reshared.author || 'Video')}')" />
                       <div class="fb-video-play-overlay">
                         <div class="fb-video-play-btn">
                           <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 3px;">
@@ -1286,7 +1323,7 @@ function renderFeedPosts(posts) {
                   </video>
                 ` : `
                   <div class="fb-video-cover-wrap" title="Click to view video">
-                    <img src="${videoThumb}" alt="${post.author || 'Facebook Video'}" loading="lazy" referrerpolicy="no-referrer" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(post.author || 'Facebook Video')}')" />
+                    <img src="${videoThumb}" alt="${post.author || 'Facebook Video'}" loading="lazy" referrerpolicy="no-referrer" data-vid="${vidMatch ? vidMatch[1] : ''}" data-author="${encodeURIComponent(post.author || 'Facebook Video')}" onerror="handleVideoThumbnailFallback(this, '${encodeURIComponent(post.author || 'Facebook Video')}')" />
                     <div class="fb-video-play-overlay">
                       <div class="fb-video-play-btn">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" style="margin-left: 3px;">
@@ -1660,18 +1697,19 @@ function setupLightboxEvents() {
  * 8. Fallback Thumbnail Generator for Videos
  */
 window.handleVideoThumbnailFallback = function(img, authorName) {
-  // If we can extract a video ID from the enclosing link's href, try local poster first before SVG
-  const link = img.closest('a');
-  const href = link ? link.getAttribute('href') : '';
-  const match = href ? href.match(/(?:videos|reel)\/(\d+)/) : null;
-  if (match && !img.dataset.triedPoster) {
+  const vid = img.dataset.vid || (img.src && img.src.match(/poster_(\d+)/)?.[1]);
+  if (vid && !img.dataset.triedPoster) {
     img.dataset.triedPoster = 'true';
-    img.src = `data/images/poster_${match[1]}.jpg`;
+    img.src = `data/images/poster_${vid}.jpg`;
     return;
   }
 
   img.onerror = null;
-  const decoded = decodeURIComponent(authorName || 'Facebook Video');
+  const rawAuthor = authorName || img.dataset.author || 'Facebook Video';
+  let decoded = 'Facebook Video';
+  try { decoded = decodeURIComponent(rawAuthor); } catch (e) { decoded = rawAuthor; }
+  const safeAuthor = decoded.replace(/[<>&'"]/g, '');
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
     <defs>
       <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1682,7 +1720,7 @@ window.handleVideoThumbnailFallback = function(img, authorName) {
     <rect width="640" height="360" fill="url(#g)"/>
     <circle cx="320" cy="155" r="38" fill="#EEBD00"/>
     <polygon points="314,142 334,155 314,168" fill="#202070"/>
-    <text x="320" y="230" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-weight="bold" font-size="16">${decoded}</text>
+    <text x="320" y="230" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-weight="bold" font-size="16">${safeAuthor}</text>
     <text x="320" y="255" text-anchor="middle" fill="#EEBD00" font-family="system-ui, -apple-system, sans-serif" font-weight="600" font-size="12">Watch Video on Facebook</text>
   </svg>`;
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
