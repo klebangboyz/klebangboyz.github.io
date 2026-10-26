@@ -43,7 +43,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add data/feed.json dist/
+          git add data/ dist/
           git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update Facebook feed strictly by config.json hashtags" && git push)
 
       - name: Setup Pages

@@ -1275,7 +1275,10 @@ function renderFeedPosts(posts) {
               const isReshareVideo = (reshared.mediaType === 'video' || (reshared.url && (reshared.url.includes('/videos/') || reshared.url.includes('/reel/'))));
 
               if (isReshareVideo) {
-                const reshareThumb = reshared.image || post.image || (reshareVidMatch ? `data/images/poster_${reshareVidMatch[1]}.jpg` : '');
+                let reshareThumb = reshared.image || post.image || '';
+                if (reshareVidMatch && (!reshareThumb || reshareThumb.endsWith('.svg'))) {
+                  reshareThumb = `data/images/poster_${reshareVidMatch[1]}.jpg`;
+                }
                 return `
                   <div class="reshared-media-wrap" onclick="window.openMediaLightbox('${encodeURIComponent(post.id || post.url)}', 0)" style="cursor: pointer;">
                     <div class="fb-video-cover-wrap" style="position:relative; display:block;" title="Click to view video">
@@ -1315,7 +1318,10 @@ function renderFeedPosts(posts) {
             <div class="fb-video-media" onclick="window.openMediaLightbox('${encodeURIComponent(post.id || post.url)}', 0)" style="cursor: pointer;">
               ${(() => {
                 const vidMatch = (post.url || '').match(/(?:videos|reel)\/(\d+)/);
-                const videoThumb = post.image || (vidMatch ? `data/images/poster_${vidMatch[1]}.jpg` : '');
+                let videoThumb = post.image || '';
+                if (vidMatch && (!videoThumb || videoThumb.endsWith('.svg'))) {
+                  videoThumb = `data/images/poster_${vidMatch[1]}.jpg`;
+                }
                 return post.videoClip ? `
                   <video controls playsinline preload="metadata" poster="${videoThumb}">
                     <source src="${post.videoClip}" type="video/mp4">
@@ -1698,7 +1704,7 @@ function setupLightboxEvents() {
  */
 window.handleVideoThumbnailFallback = function(img, authorName) {
   const vid = img.dataset.vid || (img.src && img.src.match(/poster_(\d+)/)?.[1]);
-  if (vid && !img.dataset.triedPoster) {
+  if (vid && !img.dataset.triedPoster && (!img.src || !img.src.endsWith('.jpg'))) {
     img.dataset.triedPoster = 'true';
     img.src = `data/images/poster_${vid}.jpg`;
     return;

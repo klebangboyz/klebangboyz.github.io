@@ -61,75 +61,64 @@ function postMatchesHashtags(post, configuredHashtags) {
   return normalizedTags.some(t => actualHashtags.has(t));
 }
 
-function fetchUrl(url, maxRedirects = 5, customUserAgent = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)') {
-  return new Promise((resolve, reject) => {
-    if (maxRedirects <= 0) return resolve('');
-    const client = url.startsWith('https') ? https : http;
-    const options = {
+async function fetchUrl(url, maxRedirects = 5, customUserAgent = 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)') {
+  if (!url) return '';
+  try {
+    const res = await fetch(url, {
       headers: {
         'User-Agent': customUserAgent,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9'
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache'
       },
-      timeout: 15000
-    };
-
-    client.get(url, options, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        let redirectUrl = res.headers.location;
-        if (!redirectUrl.startsWith('http')) {
-          redirectUrl = new URL(redirectUrl, url).href;
-        }
-        return fetchUrl(redirectUrl, maxRedirects - 1, customUserAgent).then(resolve).catch(reject);
-      }
-
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(data));
-    }).on('error', (err) => {
-      console.warn(`Request failed for ${url}:`, err.message);
-      resolve('');
+      signal: AbortSignal.timeout(15000),
+      redirect: 'follow'
     });
-  });
+    if (!res.ok && res.status !== 304) {
+      return '';
+    }
+    return await res.text();
+  } catch (err) {
+    return '';
+  }
 }
 
-function downloadImageToFile(url, destPath) {
-  return new Promise((resolve) => {
-    if (!url || !destPath) return resolve(false);
-    if (fs.existsSync(destPath) && fs.statSync(destPath).size > 1000) {
-      return resolve(true);
-    }
-    const client = url.startsWith('https') ? https : http;
-    const req = client.get(url, { headers: { 'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)' } }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        let redirectUrl = res.headers.location;
-        if (!redirectUrl.startsWith('http')) {
-          redirectUrl = new URL(redirectUrl, url).href;
-        }
-        return downloadImageToFile(redirectUrl, destPath).then(resolve);
-      }
-      if (res.statusCode !== 200) {
-        return resolve(false);
-      }
+async function downloadImageToFile(url, destPath) {
+  if (!url || !destPath) return false;
+  if (fs.existsSync(destPath) && fs.statSync(destPath).size > 1000) {
+    return true;
+  }
+  const uas = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+    'curl/8.0.0',
+    'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)'
+  ];
+
+  for (const ua of uas) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': ua,
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'Referer': 'https://www.facebook.com/'
+        },
+        signal: AbortSignal.timeout(15000),
+        redirect: 'follow'
+      });
+      if (!res.ok) continue;
+
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.length < 1000) continue;
+
       const dir = path.dirname(destPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      const fileStream = fs.createWriteStream(destPath);
-      res.pipe(fileStream);
-      fileStream.on('finish', () => {
-        fileStream.close();
-        resolve(fs.existsSync(destPath) && fs.statSync(destPath).size > 1000);
-      });
-      fileStream.on('error', () => {
-        try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch (e) {}
-        resolve(false);
-      });
-    });
-    req.on('error', () => resolve(false));
-    req.setTimeout(12000, () => {
-      try { req.abort(); } catch (e) {}
-      resolve(false);
-    });
-  });
+      fs.writeFileSync(destPath, buffer);
+      return true;
+    } catch (e) {
+      // try next UA
+    }
+  }
+  return false;
 }
 
 function extractResolutionScore(url) {
@@ -194,24 +183,45 @@ async function fetchPostMedia(permalink) {
     : `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(permalink)}&show_text=1`;
 
   try {
-    // 1. Fetch with facebookexternalhit to get og:image and rich metadata
-    let htmlRaw = await fetchUrl(permalink, 5, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
-    if (isVideo && vidId && (!htmlRaw || !htmlRaw.includes('og:image'))) {
-      const reelUrl = `https://www.facebook.com/reel/${vidId}/`;
-      const reelHtml = await fetchUrl(reelUrl, 5, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
-      if (reelHtml && reelHtml.includes('og:image')) {
-        htmlRaw = (htmlRaw || '') + ' ' + reelHtml;
+    let combined = '';
+    if (isVideo && vidId) {
+      const probeUrls = [
+        `https://www.facebook.com/watch/?v=${vidId}`,
+        `https://www.facebook.com/reel/${vidId}/`,
+        permalink
+      ];
+      const probeUas = [
+        'curl/8.0.0',
+        'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+        'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+      ];
+      for (const pUrl of probeUrls) {
+        for (const pUa of probeUas) {
+          const h = await fetchUrl(pUrl, 5, pUa);
+          if (h && (h.includes('og:image') || h.includes('twitter:image') || h.includes('scontent'))) {
+            combined += ' ' + h;
+            break;
+          }
+        }
+        if (combined.includes('og:image') || combined.includes('twitter:image')) break;
       }
+    } else {
+      let htmlRaw = await fetchUrl(permalink, 5, 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)');
+      if (!htmlRaw) {
+        htmlRaw = await fetchUrl(permalink, 5, 'curl/8.0.0');
+      }
+      const htmlPlugin = await fetchUrl(pluginUrl, 3, 'curl/8.0.0');
+      combined = (htmlRaw || '') + ' ' + (htmlPlugin || '');
     }
-
-    const htmlPlugin = await fetchUrl(pluginUrl, 3, 'curl/8.0.0');
-    const combined = (htmlRaw || '') + ' ' + (htmlPlugin || '');
 
     const photoMap = new Map();
 
-    // Check OpenGraph og:image first (best single media / video thumbnail)
+    // Check OpenGraph og:image or twitter:image first (best single media / video thumbnail)
     const ogMatch = combined.match(/<meta\b[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
-                    combined.match(/<meta\b[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+                    combined.match(/<meta\b[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i) ||
+                    combined.match(/<meta\b[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i) ||
+                    combined.match(/<meta\b[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image["']/i);
     if (ogMatch) {
       const ogUrl = ogMatch[1].replace(/&amp;/g, '&');
       if (ogUrl.includes('fbcdn.net') && !ogUrl.includes('static.xx')) {
@@ -853,49 +863,74 @@ async function main() {
         const localRel = `data/images/poster_${vidId}.jpg`;
         const localAbs = path.resolve(__dirname, '..', localRel);
 
+        // Clean up legacy svg references
+        if (post.image && post.image.endsWith('.svg')) post.image = '';
+        if (Array.isArray(post.images)) post.images = post.images.filter(img => !img.endsWith('.svg'));
+
         // 1. If local poster already exists on disk, always prefer it
         if (fs.existsSync(localAbs) && fs.statSync(localAbs).size > 1000) {
           post.image = localRel;
           post.images = [localRel];
-        } else if (post.image && post.image.startsWith('http')) {
-          // 2. If we have a remote CDN thumbnail, download and cache it locally
-          try {
-            console.log(`-> Downloading video thumbnail to local poster: ${localRel}...`);
-            const ok = await downloadImageToFile(post.image, localAbs);
-            if (ok) {
-              post.image = localRel;
-              post.images = [localRel];
-              console.log(`-> Saved video poster: ${localRel}`);
-            }
-          } catch (e) {
-            console.warn(`Could not save poster for ${vidId}:`, e.message);
-          }
         } else {
-          // 3. If no image at all, generate a branded SVG poster file so it is NEVER missing!
-          try {
-            const svgRel = `data/images/poster_${vidId}.svg`;
-            const svgAbs = path.resolve(__dirname, '..', svgRel);
-            if (!fs.existsSync(svgAbs)) {
-              const authorSafe = (post.author || 'Facebook Video').replace(/[<>&'"]/g, '');
-              const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-  <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#202070"/>
-      <stop offset="100%" stop-color="#0f0f35"/>
-    </linearGradient>
-  </defs>
-  <rect width="640" height="360" fill="url(#g)"/>
-  <circle cx="320" cy="155" r="38" fill="#EEBD00"/>
-  <polygon points="314,142 334,155 314,168" fill="#202070"/>
-  <text x="320" y="230" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-weight="bold" font-size="16">${authorSafe}</text>
-  <text x="320" y="255" text-anchor="middle" fill="#EEBD00" font-family="system-ui, -apple-system, sans-serif" font-weight="600" font-size="12">Watch Video on Facebook</text>
-</svg>`;
-              fs.writeFileSync(svgAbs, svgContent, 'utf8');
+          // 2. If we have a remote CDN thumbnail, download and cache it locally
+          let downloaded = false;
+          if (post.image && post.image.startsWith('http')) {
+            try {
+              console.log(`-> Downloading video thumbnail to local poster: ${localRel}...`);
+              downloaded = await downloadImageToFile(post.image, localAbs);
+            } catch (e) {}
+          }
+
+          // 3. If still not downloaded, probe Facebook watch, reel, and video URLs
+          if (!downloaded) {
+            const probeUrls = [
+              `https://www.facebook.com/watch/?v=${vidId}`,
+              `https://www.facebook.com/reel/${vidId}/`,
+              post.url
+            ].filter(Boolean);
+
+            const probeUas = [
+              'curl/8.0.0',
+              'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+              'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+            ];
+
+            let probedOg = '';
+            for (const pUrl of probeUrls) {
+              for (const pUa of probeUas) {
+                try {
+                  const pHtml = await fetchUrl(pUrl, 5, pUa);
+                  const ogM = pHtml.match(/<meta\b[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+                              pHtml.match(/<meta\b[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i) ||
+                              pHtml.match(/<meta\b[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i) ||
+                              pHtml.match(/<meta\b[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image["']/i);
+                  if (ogM && ogM[1] && ogM[1].includes('fbcdn.net') && !ogM[1].includes('static.xx')) {
+                    probedOg = ogM[1].replace(/&amp;/g, '&');
+                    break;
+                  }
+                } catch (e) {}
+              }
+              if (probedOg) break;
             }
-            post.image = svgRel;
-            post.images = [svgRel];
-            console.log(`-> Generated fallback SVG poster: ${svgRel}`);
-          } catch (e) {}
+
+            if (probedOg) {
+              try {
+                console.log(`-> Probed and downloading video poster for ${vidId}...`);
+                downloaded = await downloadImageToFile(probedOg, localAbs);
+              } catch (e) {}
+            }
+          }
+
+          if (fs.existsSync(localAbs) && fs.statSync(localAbs).size > 1000) {
+            post.image = localRel;
+            post.images = [localRel];
+            console.log(`-> Saved video poster: ${localRel}`);
+          } else {
+            // Keep canonical localRel path so client-side fallback engine in app.js can resolve it
+            post.image = localRel;
+            post.images = [localRel];
+          }
         }
       }
     }
